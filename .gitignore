@@ -1,0 +1,35 @@
+# ---- .NET ----
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# ---- Unity ----
+unity/ComTamTycoon/Library/
+unity/ComTamTycoon/Temp/
+unity/ComTamTycoon/Obj/
+unity/ComTamTycoon/Build/
+unity/ComTamTycoon/Builds/
+unity/ComTamTycoon/Logs/
+unity/ComTamTycoon/UserSettings/
+unity/ComTamTycoon/MemoryCaptures/
+unity/ComTamTycoon/Recordings/
+# Unity regenerates these from the .asmdef files. The hand-written project
+# files under src/ are tracked, so scope this to the Unity project only.
+unity/ComTamTycoon/*.csproj
+unity/ComTamTycoon/*.sln
+*.unityproj
+*.sln.DotSettings.user
+*.apk
+*.aab
+*.unitypackage
+
+# Core is mirrored into Unity by tools/sync-core-to-unity.sh.
+# src/ComTam.Core is the source of truth; the copy is generated.
+unity/ComTamTycoon/Assets/_Project/Core/**/*.cs
+!unity/ComTamTycoon/Assets/_Project/Core/*.asmdef
+
+# ---- OS ----
+.DS_Store
+Thumbs.db
