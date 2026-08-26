@@ -1,0 +1,33 @@
+name: Core tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  test:
+    name: Build & test ComTam.Core
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore
+        run: dotnet restore ComTamTycoon.sln
+
+      - name: Build
+        # Core pins LangVersion 9.0, so this also proves the simulation would
+        # compile under Unity 6's C# 9 compiler.
+        run: dotnet build ComTamTycoon.sln --no-restore -c Release
+
+      - name: Test
+        run: dotnet test ComTamTycoon.sln --no-build -c Release --verbosity normal
+
+      - name: Gameplay loop smoke test
+        # Plays a full bot day through the real simulation and fails if the loop
+        # cannot close or cannot turn a profit.
+        run: dotnet run --project src/ComTam.ConsoleHarness -c Release --no-build -- --auto --seed 42

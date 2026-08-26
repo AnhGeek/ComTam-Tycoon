@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- netstandard2.1 is what Unity 6 consumes. Do not raise this. -->
+    <TargetFramework>netstandard2.1</TargetFramework>
+
+    <!--
+      Unity 6 (6000.x) ships a C# 9 compiler. Pinning LangVersion to 9.0 here
+      means the build FAILS on any syntax Unity could not compile
+      (file-scoped namespaces, record structs, list patterns, ...).
+      This is deliberate: it turns "will this work in Unity?" from a code-review
+      opinion into a compiler error.
+    -->
+    <LangVersion>9.0</LangVersion>
+
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <AssemblyName>ComTam.Core</AssemblyName>
+    <RootNamespace>ComTam.Core</RootNamespace>
+  </PropertyGroup>
+
+</Project>

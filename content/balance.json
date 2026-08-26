@@ -1,0 +1,50 @@
+{
+  "_comment": "Balance source of truth (ADR-0003). BalanceJsonMatchesDefaultsTests fails the build if these drift from BalanceConfig defaults. All money is in Vietnamese đồng; all times are in seconds.",
+
+  "StartingMoneyDong": 100000,
+  "ComSuonPriceDong": 45000,
+
+  "RiceCostDong": 3000,
+  "PorkCostDong": 12000,
+  "SauceCostDong": 1000,
+
+  "DayLengthSeconds": 150.0,
+  "CustomersOnDay1": 6,
+  "FirstSpawnDelaySeconds": 2.0,
+  "SpawnIntervalSeconds": 22.0,
+  "SpawnJitterSeconds": 4.0,
+  "QueueCapacity": 3,
+
+  "GrillRawUntilSeconds": 3.0,
+  "GrillPerfectStartSeconds": 4.6,
+  "GrillPerfectEndSeconds": 6.0,
+  "GrillBurntAtSeconds": 8.0,
+  "GrillGraceSeconds": 0.08,
+
+  "PorkCookingQuality": 50,
+  "PorkOvercookedHighQuality": 70,
+  "PorkOvercookedLowQuality": 35,
+
+  "RiceQuality": 85,
+  "SauceQuality": 100,
+
+  "BurnPatiencePenalty": 0.08,
+
+  "SatWaitWeight": 40.0,
+  "SatQualityWeight": 30.0,
+  "SatAccuracyWeight": 20.0,
+  "SatPriceWeight": 10.0,
+
+  "TipMinStars": 4,
+  "TipRateAt4Stars": 0.05,
+  "TipRatePerStarAbove4": 0.05,
+
+  "EatingSeconds": 3.0,
+  "WalkToQueueSeconds": 1.0,
+  "OrderingSeconds": 0.6,
+  "ReceivingFoodSeconds": 0.5,
+  "LeavingSeconds": 0.8,
+
+  "Day1GoalCustomers": 5,
+  "Day1GoalBonusDong": 50000
+}
