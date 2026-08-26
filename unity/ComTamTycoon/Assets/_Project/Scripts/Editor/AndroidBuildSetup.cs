@@ -33,9 +33,22 @@ namespace ComTam.Unity.EditorTools
         [MenuItem("Cơm Tấm/Android/Apply Settings")]
         public static void ApplyAndroidSettings()
         {
+            ApplyAndroidSettings(null, 0);
+        }
+
+        /// <summary>
+        /// <paramref name="version"/> is the human-readable name ("0.1.0");
+        /// <paramref name="versionCode"/> is the integer Play orders builds by.
+        /// Both come from the release tag in CI. Passing null/0 leaves them alone.
+        /// </summary>
+        public static void ApplyAndroidSettings(string version, int versionCode)
+        {
             PlayerSettings.companyName = CompanyName;
             PlayerSettings.productName = ProductName;
             PlayerSettings.SetApplicationIdentifier(BuildTargetGroup.Android, PackageId);
+
+            if (!string.IsNullOrEmpty(version)) PlayerSettings.bundleVersion = version;
+            if (versionCode > 0) PlayerSettings.Android.bundleVersionCode = versionCode;
 
             // --- Orientation: portrait, locked (ADR-0002) ---
             PlayerSettings.defaultInterfaceOrientation = UIOrientation.Portrait;
@@ -95,16 +108,21 @@ namespace ComTam.Unity.EditorTools
         {
             string[] args = Environment.GetCommandLineArgs();
             string output = ArgValue(args, "-outputPath") ?? "build/ComTamTycoon.apk";
+            string version = ArgValue(args, "-appVersion");
+            int versionCode;
+            int.TryParse(ArgValue(args, "-versionCode") ?? "0", out versionCode);
             bool aab = args.Contains("-buildAppBundle");
             bool development = args.Contains("-development");
 
-            ApplyAndroidSettings();
+            ApplyAndroidSettings(version, versionCode);
             EditorUserBuildSettings.buildAppBundle = aab;
 
             if (!File.Exists(ScenePath))
             {
                 Fail("Scene not found: " + ScenePath
-                     + "\nBuild the Restaurant scene first — see unity/SCENE-SETUP.md.");
+                     + "\n\nThe Restaurant scene has not been built yet. Everything else"
+                     + "\nin the pipeline is ready - this is the one remaining step, and"
+                     + "\nit needs the Unity Editor once. See unity/SCENE-SETUP.md.");
                 return;
             }
 

@@ -69,6 +69,59 @@ CI has none of these restrictions, which is why Route A exists.
 
 ---
 
+## 3a. Cutting a release
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+That triggers `.github/workflows/release.yml`, which runs the C# and JS test
+suites, builds the artifacts, and publishes a GitHub Release.
+
+Version numbers are derived from the tag: `v0.1.0` → version `0.1.0`, Android
+`versionCode` `100` (`major×10000 + minor×100 + patch`, so it always increases,
+which Play requires). A tag that is not semver is rejected before anything
+builds.
+
+The release always contains the **web build**. It contains the **APK** only once
+both of these exist, and reports precisely which one is missing when it does
+not:
+
+- `unity/ComTamTycoon/Assets/_Project/Scenes/Restaurant.unity`
+- the `UNITY_LICENSE` repository secret
+
+The Android job is `continue-on-error`, so a missing prerequisite produces a
+release without an APK rather than no release at all. Re-run the workflow once
+both exist and the APK attaches automatically.
+
+### Debug signing — and its one hard limit
+
+The release workflow generates a throwaway **Android debug keystore** at build
+time:
+
+| | |
+|---|---|
+| Alias | `androiddebugkey` |
+| Store / key password | `android` |
+| DN | `CN=Android Debug, O=Android, C=US` |
+
+These credentials are **not secrets**. They are the conventional values every
+Android SDK installs by default, hardcoded in the workflow on purpose, and the
+keystore is shredded after the build.
+
+> **A debug-signed APK can never be published to Google Play.** Play rejects
+> debug certificates outright. That is a feature here, not a limitation: it
+> makes it structurally impossible to accidentally ship a playtest build to the
+> store.
+
+When you are genuinely ready to publish, generate an **upload keystore** you
+alone hold (§4), add it as `ANDROID_KEYSTORE_BASE64` and friends, and build an
+AAB. Do not reuse the debug key, and never commit either one — `.gitignore`
+already refuses `*.keystore` and `*.jks`.
+
+---
+
 ## 4. Google Play release checklist
 
 Ordered by when it blocks you.

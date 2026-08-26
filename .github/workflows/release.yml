@@ -1,0 +1,284 @@
+name: Release
+
+# Fires on a version tag (v0.1.0, v0.2.0, ...) and publishes a GitHub Release.
+#
+# The release always contains the playable web build. It also contains a
+# debug-signed Android APK **once the Unity Restaurant scene exists and a Unity
+# licence secret is configured** - until then the Android job reports what is
+# missing and the release ships without it, rather than failing the whole run.
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# ── DEBUG SIGNING ────────────────────────────────────────────────────────────
+# This workflow signs with a freshly generated ANDROID DEBUG KEYSTORE, using
+# the conventional public credentials (alias androiddebugkey, password
+# android). Those are not secrets - they are the same values every Android SDK
+# install ships with, which is exactly why a debug-signed APK is fine to hand
+# around for testing and can NEVER be published to Google Play.
+#
+# Play needs an upload keystore that only you hold. See docs/06-ANDROID-RELEASE.md.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build (e.g. 0.1.0)"
+        required: true
+        default: "0.1.0"
+
+permissions:
+  contents: write
+
+jobs:
+  # ---------------------------------------------------------------------------
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      version_code: ${{ steps.v.outputs.version_code }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: v
+        name: Resolve version
+        run: |
+          RAW="${{ github.event.inputs.version || github.ref_name }}"
+          VERSION="${RAW#v}"
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Version '$VERSION' is not semver (expected e.g. 0.1.0)"
+            exit 1
+          fi
+          # Play orders builds by an integer, so derive a monotonic one:
+          # 0.1.0 -> 100, 1.2.3 -> 10203
+          IFS=. read -r MA MI PA <<< "$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "version_code=$((MA * 10000 + MI * 100 + PA))" >> "$GITHUB_OUTPUT"
+          echo "Building version $VERSION (code $((MA * 10000 + MI * 100 + PA)))"
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Simulation tests (C#)
+        run: dotnet test ComTamTycoon.sln -c Release
+
+      - name: Prototype tests (JS)
+        run: node --test prototype/test/core.test.js
+
+  # ---------------------------------------------------------------------------
+  web:
+    name: Build web prototype
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build
+        run: node prototype/build.mjs
+
+      - name: Name it after the release
+        run: |
+          mv prototype/dist/comtam-tycoon.html \
+             "comtam-tycoon-${{ needs.verify.outputs.version }}-web.html"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web
+          path: "*.html"
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  android:
+    name: Build Android APK (debug-signed)
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # Never sink the release if the Android build cannot run yet.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Check prerequisites
+        id: pre
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+        run: |
+          MISSING=""
+          if [ ! -f "unity/ComTamTycoon/Assets/_Project/Scenes/Restaurant.unity" ]; then
+            MISSING="$MISSING\n  - The Unity Restaurant scene does not exist yet (see unity/SCENE-SETUP.md)"
+          fi
+          if [ -z "$UNITY_LICENSE" ]; then
+            MISSING="$MISSING\n  - The UNITY_LICENSE repository secret is not set (https://game.ci/docs/github/activation)"
+          fi
+          if [ -n "$MISSING" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Android APK skipped. Missing:$(echo -e "$MISSING")"
+            {
+              echo "### Android APK not built"
+              echo ""
+              echo "The release will publish without an APK. Missing:"
+              echo -e "$MISSING"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Free disk space
+        if: steps.pre.outputs.ready == 'true'
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+
+      - name: Sync ComTam.Core into the Unity project
+        if: steps.pre.outputs.ready == 'true'
+        run: |
+          chmod +x tools/sync-core-to-unity.sh
+          ./tools/sync-core-to-unity.sh
+
+      - name: Generate debug keystore
+        if: steps.pre.outputs.ready == 'true'
+        # The standard Android debug key. Credentials are public by convention;
+        # a debug-signed APK installs anywhere but is rejected by Play, which is
+        # the property we want here.
+        run: |
+          keytool -genkeypair -v \
+            -keystore unity/ComTamTycoon/debug.keystore \
+            -storepass android -keypass android \
+            -alias androiddebugkey \
+            -keyalg RSA -keysize 2048 -validity 10950 \
+            -dname "CN=Android Debug,O=Android,C=US"
+
+      - name: Cache Unity Library
+        if: steps.pre.outputs.ready == 'true'
+        uses: actions/cache@v4
+        with:
+          path: unity/ComTamTycoon/Library
+          key: Library-Android-${{ hashFiles('unity/ComTamTycoon/Assets/**') }}
+          restore-keys: Library-Android-
+
+      - name: Build APK
+        if: steps.pre.outputs.ready == 'true'
+        uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          projectPath: unity/ComTamTycoon
+          targetPlatform: Android
+          androidAppBundle: false
+          androidKeystoreName: debug.keystore
+          androidKeystorePass: android
+          androidKeyaliasName: androiddebugkey
+          androidKeyaliasPass: android
+          versioning: Custom
+          version: ${{ needs.verify.outputs.version }}
+          buildMethod: ComTam.Unity.EditorTools.AndroidBuildSetup.BuildFromCommandLine
+          customParameters: >-
+            -outputPath build/Android/comtam-tycoon-${{ needs.verify.outputs.version }}.apk
+            -appVersion ${{ needs.verify.outputs.version }}
+            -versionCode ${{ needs.verify.outputs.version_code }}
+
+      - name: Shred keystore
+        if: always()
+        run: rm -f unity/ComTamTycoon/debug.keystore
+
+      - uses: actions/upload-artifact@v4
+        if: steps.pre.outputs.ready == 'true'
+        with:
+          name: android
+          path: build/Android/*.apk
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  release:
+    name: Publish release
+    needs: [verify, web, android]
+    if: always() && needs.verify.result == 'success' && needs.web.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Inventory
+        id: inv
+        run: |
+          ls -R artifacts || true
+          if ls artifacts/*.apk >/dev/null 2>&1; then
+            echo "apk=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "apk=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compose release notes
+        run: |
+          V="${{ needs.verify.outputs.version }}"
+          {
+            echo "## Cơm Tấm Tycoon $V"
+            echo ""
+            echo "Phase 1 — the Day 1 loop: customers arrive, order cơm sườn, pork is"
+            echo "grilled on a timing minigame, the plate is served, the day closes"
+            echo "with a ledger."
+            echo ""
+            echo "### Downloads"
+            echo ""
+            if [ "${{ steps.inv.outputs.apk }}" = "true" ]; then
+              echo "| File | Platform | Notes |"
+              echo "|---|---|---|"
+              echo "| \`comtam-tycoon-$V.apk\` | Android | **Debug-signed.** Sideload only — Play rejects debug keys. |"
+              echo "| \`comtam-tycoon-$V-web.html\` | Browser | Open in any mobile browser. |"
+              echo ""
+              echo "**Installing the APK:** enable *Install unknown apps* for your"
+              echo "browser or file manager, then open the file. Or \`adb install\`."
+            else
+              echo "| File | Platform | Notes |"
+              echo "|---|---|---|"
+              echo "| \`comtam-tycoon-$V-web.html\` | Browser | Open in any mobile browser. |"
+              echo ""
+              echo "> **No APK in this release.** The Unity Restaurant scene has not"
+              echo "> been built yet, and/or the \`UNITY_LICENSE\` secret is not set."
+              echo "> Everything else in the Android pipeline is ready — see"
+              echo "> [docs/06-ANDROID-RELEASE.md](docs/06-ANDROID-RELEASE.md)."
+              echo "> Re-run this workflow once both exist and the APK is attached"
+              echo "> automatically."
+            fi
+            echo ""
+            echo "### Not for Play"
+            echo ""
+            echo "This build is for playtesting. It signs with a debug key, has no"
+            echo "save system, and contains a single day. Publishing it would spend"
+            echo "the store listing's early ratings on an MVP."
+            echo ""
+            echo "### What to look for"
+            echo ""
+            echo "One question decides whether Phase 2 is polish or a redesign:"
+            echo "**does hitting the gold zone feel satisfying, or merely correct?**"
+            echo "And is it still engaging by the tenth chop?"
+          } > notes.md
+          cat notes.md
+
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Cơm Tấm Tycoon ${{ needs.verify.outputs.version }}"
+          # Derived from the resolved version, not github.ref_name: on a manual
+          # dispatch ref_name is the branch ("main"), which would tag wrongly.
+          tag_name: "v${{ needs.verify.outputs.version }}"
+          body_path: notes.md
+          draft: false
+          prerelease: true
+          files: |
+            artifacts/*.apk
+            artifacts/*.html
