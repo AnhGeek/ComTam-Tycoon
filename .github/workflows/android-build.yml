@@ -1,0 +1,133 @@
+name: Android build
+
+# Produces an installable APK (and a Play-ready AAB on demand) without anyone
+# having Unity on their machine.
+#
+# ── One-time setup ────────────────────────────────────────────────────────────
+# Add these repository secrets (Settings ▸ Secrets and variables ▸ Actions):
+#
+#   UNITY_LICENSE        Contents of your .ulf licence file. A free Unity
+#                        Personal licence works. Get it with the GameCI
+#                        activation flow: https://game.ci/docs/github/activation
+#   UNITY_EMAIL          Unity account email
+#   UNITY_PASSWORD       Unity account password
+#
+# Signing (only needed for a Play upload, NOT for sideload testing):
+#
+#   ANDROID_KEYSTORE_BASE64      base64 of your upload keystore
+#                                (`base64 -w0 upload.keystore`)
+#   ANDROID_KEYSTORE_PASS        keystore password
+#   ANDROID_KEYALIAS_NAME        key alias
+#   ANDROID_KEYALIAS_PASS        key password
+#
+# NEVER commit the keystore or any of these values. Losing the upload keystore
+# means you can no longer update the app on Play — back it up somewhere you
+# control, offline.
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: "Artifact to produce"
+        required: true
+        default: apk
+        type: choice
+        options: [apk, aab]
+      development:
+        description: "Development build (profiler + debugging)"
+        required: false
+        default: false
+        type: boolean
+  push:
+    tags: ["v*"]
+
+jobs:
+  core-tests:
+    name: Core tests (gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      # The simulation must be green before we spend ~20 minutes on a Unity build.
+      - run: dotnet test ComTamTycoon.sln -c Release
+
+  android:
+    name: Build Android
+    needs: core-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Free up disk space
+        # Unity Android images are large; the default runner runs out.
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          df -h /
+
+      - name: Sync ComTam.Core into the Unity project
+        run: |
+          chmod +x tools/sync-core-to-unity.sh
+          ./tools/sync-core-to-unity.sh
+
+      - name: Cache Unity Library
+        uses: actions/cache@v4
+        with:
+          path: unity/ComTamTycoon/Library
+          key: Library-Android-${{ hashFiles('unity/ComTamTycoon/Assets/**', 'unity/ComTamTycoon/Packages/**') }}
+          restore-keys: |
+            Library-Android-
+            Library-
+
+      - name: Decode keystore (optional — unsigned build is fine for sideloading)
+        # The `secrets` context is NOT available in step `if:` conditions, so the
+        # presence check happens inside the script instead.
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "No keystore secret set — building unsigned (debug-signed) APK."
+            exit 0
+          fi
+          echo "$KEYSTORE_B64" | base64 -d > unity/ComTamTycoon/upload.keystore
+          echo "Keystore decoded ($(stat -c%s unity/ComTamTycoon/upload.keystore) bytes)"
+
+      - name: Build
+        uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          projectPath: unity/ComTamTycoon
+          targetPlatform: Android
+          androidAppBundle: ${{ github.event.inputs.build_type == 'aab' }}
+          androidKeystoreName: upload.keystore
+          androidKeystoreBase64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          androidKeystorePass: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+          androidKeyaliasName: ${{ secrets.ANDROID_KEYALIAS_NAME }}
+          androidKeyaliasPass: ${{ secrets.ANDROID_KEYALIAS_PASS }}
+          buildMethod: ComTam.Unity.EditorTools.AndroidBuildSetup.BuildFromCommandLine
+          customParameters: >-
+            -outputPath build/Android/ComTamTycoon.${{ github.event.inputs.build_type || 'apk' }}
+            ${{ github.event.inputs.build_type == 'aab' && '-buildAppBundle' || '' }}
+            ${{ github.event.inputs.development == 'true' && '-development' || '' }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: comtam-tycoon-android
+          path: |
+            build/Android/*.apk
+            build/Android/*.aab
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Shred keystore
+        if: always()
+        run: rm -f unity/ComTamTycoon/upload.keystore

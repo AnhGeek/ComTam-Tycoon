@@ -24,6 +24,19 @@ unity/ComTamTycoon/*.sln
 *.apk
 *.aab
 *.unitypackage
+build/
+
+# ---- Signing: NEVER commit these ----
+# Losing the upload keystore means the app can never be updated on Play again;
+# leaking it means someone else can publish as you. Keep it offline, and pass it
+# to CI through the ANDROID_KEYSTORE_BASE64 secret.
+*.keystore
+*.jks
+*.p12
+*.pepk
+keystore.properties
+google-services.json
+play-service-account*.json
 
 # Core is mirrored into Unity by tools/sync-core-to-unity.sh.
 # src/ComTam.Core is the source of truth; the copy is generated.

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Custom main manifest. Unity merges its own generated entries into this.
+
+  Deliberately requests NO permissions. Phase 1 is fully offline: no network,
+  no storage, no ads, no analytics. Play's Data Safety form is far easier to
+  fill in truthfully when the app genuinely cannot reach the network, and
+  permissions are the single most common cause of first-submission friction.
+
+  When ads/IAP arrive in Phase 8 they will add INTERNET,
+  ACCESS_NETWORK_STATE and com.google.android.gms.permission.AD_ID. Add them
+  then, not now.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          xmlns:tools="http://schemas.android.com/tools">
+
+    <application
+        android:allowBackup="false"
+        android:hardwareAccelerated="true"
+        android:largeHeap="false"
+        android:extractNativeLibs="false"
+        tools:targetApi="24">
+
+        <activity
+            android:name="com.unity3d.player.UnityPlayerActivity"
+            android:screenOrientation="portrait"
+            android:launchMode="singleTask"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale|layoutDirection|density"
+            android:hardwareAccelerated="true"
+            android:exported="true"
+            android:resizeableActivity="false">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <meta-data android:name="unityplayer.UnityActivity" android:value="true" />
+        </activity>
+    </application>
+
+    <!-- Vulkan/GLES3 capable hardware; keeps the game off devices that cannot run it. -->
+    <uses-feature android:glEsVersion="0x00030000" android:required="true" />
+
+    <!-- Not a phone-only game, but it is not designed for TV or watches either. -->
+    <uses-feature android:name="android.hardware.touchscreen" android:required="true" />
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.location" android:required="false" />
+
+</manifest>

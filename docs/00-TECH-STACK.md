@@ -14,6 +14,10 @@
 The second half of that sentence matters more than the first. Read §5 before
 arguing about the engine.
 
+> **Platform order changed 2026-08-26: Android ships first, iOS second.**
+> See ADR-0006 in §12. The engine choice survives the change; several
+> assumptions elsewhere in this document do not, and are marked inline.
+
 ---
 
 ## 2. Candidates evaluated
@@ -273,6 +277,89 @@ different word.
 `ComTam.Core` + its test suite, which is fully verifiable once the .NET SDK is
 installed. The Unity shell needs a human with an Editor. I will not report Unity
 code as "working" that I could not run.
+
+---
+
+## 12. ADR-0006 — Android first, iOS second
+
+**Status:** Accepted 2026-08-26, superseding the iOS-first assumption in §1–§4.
+
+### Decision
+
+Android is the primary development and release target. iOS follows once the
+Android build is stable. Unity + C# is retained.
+
+### What this changes
+
+| Area | Was (iOS-first) | Now (Android-first) |
+|---|---|---|
+| Primary target | iPhone, ARM64, IL2CPP | Android, ARM64 + ARMv7, IL2CPP |
+| Store | App Store | **Google Play** |
+| Submission gate | App Review (days, human) | Play review (hours, mostly automated) |
+| Signing | Apple Developer Program, $99/yr | **Upload keystore**, one-off $25 account |
+| Baseline device | iPhone SE 2 | **Snapdragon 6-series, 4 GB RAM** |
+| Test matrix | ~6 devices, narrow | **Wide and fragmented** — see risk R12 |
+| First cost to you | $99/yr before you can test on hardware | **$0** — sideload an APK today |
+
+### Why this is a good change
+
+1. **The feedback loop gets dramatically shorter.** An Android APK can be
+   sideloaded onto any phone with no developer account, no provisioning profile,
+   no device UDID registration, and no review. On iOS, putting a build on a
+   friend's phone means TestFlight and a paid account. For a project whose top
+   risk is "is the grill actually fun" (R1), the platform that lets five people
+   play it this week is the correct platform to lead with.
+
+2. **It matches the audience.** Vietnam is an overwhelmingly Android market.
+   Shipping iOS first would have meant validating the game against the smaller
+   half of the target audience.
+
+3. **Play is far more forgiving for a first release.** Staged rollouts, internal
+   testing tracks, and same-day updates. Getting a bad build off Play takes
+   hours; off the App Store it takes a review cycle.
+
+### The honest cost — one of my Unity arguments gets weaker
+
+In §3 I argued that Unity wins primarily on the monetization tail, because ad
+and IAP SDKs are Unity-first. **On Android-only that argument is materially
+weaker**, because AdMob and AppLovin ship first-class *native Android* SDKs —
+Unity's are wrappers around exactly those. A native Kotlin build would have
+equal-or-better access to them.
+
+So it is worth stating plainly what still justifies Unity now that Android
+leads:
+
+- **iOS is still on the roadmap.** Android-first is a sequencing decision, not
+  an abandonment. Native Kotlin means writing the client twice.
+- **Animation pipeline.** Spine and the 2D tooling remain the reason a
+  content-hungry casual game ships faster in Unity than in Compose Canvas.
+- **ComTam.Core is already engine-agnostic** and would survive a Godot move,
+  but *not* a Kotlin rewrite — that would discard the tested simulation.
+
+**If iOS were dropped permanently**, native Kotlin + Jetpack Compose would
+become the better recommendation, and this ADR should be reopened. That is a
+product decision, not a technical one, so it belongs to the PM. Flagging it
+rather than burying it.
+
+### Android-specific settings now locked in
+
+| Setting | Value | Reason |
+|---|---|---|
+| `minSdkVersion` | **24** (Android 7.0) | ~99% device coverage; below this is not worth the QA |
+| `targetSdkVersion` | Highest Unity supports | Play raises its floor every August — **check the current requirement before submitting**, it is a hard gate |
+| Architectures | ARM64 **and** ARMv7 | ARM64 is mandatory on Play; ARMv7 widens reach in VN |
+| Scripting backend | IL2CPP | Required for ARM64 |
+| Format | **AAB** for Play, **APK** for sideload testing | Play only accepts AAB |
+| Orientation | Portrait, locked | ADR-0002 is unaffected |
+| `android:debuggable` | false in release | |
+
+### Consequence for the risk register
+
+**Risk R12 (low-end Android performance) is promoted from score 9 to a top-tier
+concern.** It was scheduled for Phase 9; it moves to **continuous from Phase 2**,
+because Android-first means the baseline device is now the primary device rather
+than a late port target. Fragmentation testing is no longer something that
+happens at the end.
 
 ---
 

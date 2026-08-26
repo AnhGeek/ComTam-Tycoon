@@ -4,6 +4,7 @@ A casual Vietnamese street-food restaurant simulation. Start with a tiny cơm t�
 cart, grill pork, serve customers, and build a restaurant empire.
 
 **Status:** Phase 1 — playable MVP in progress.
+**Platform:** Android first, iOS second (ADR-0006).
 
 ---
 
@@ -34,6 +35,7 @@ rationale.
 | [03-ROADMAP.md](docs/03-ROADMAP.md) | Phases 0–9, per-system complexity estimates |
 | [04-RISKS.md](docs/04-RISKS.md) | Ranked risk register with mitigations |
 | [05-ART-AND-UI.md](docs/05-ART-AND-UI.md) | Art direction, asset specs, UI wireframes |
+| [06-ANDROID-RELEASE.md](docs/06-ANDROID-RELEASE.md) | **How to get an APK**, and the Play release checklist |
 
 ## Repository layout
 
@@ -55,6 +57,15 @@ The console harness is a grey-box prototype: it runs the real simulation with a
 terminal front-end, so the gameplay loop can be played and tested without the
 Unity Editor.
 
+## Getting an Android build
+
+The only thing missing between this repo and an installable APK is the Unity
+Restaurant scene — build it once per `unity/SCENE-SETUP.md`, then
+**Actions ▸ Android build ▸ Run workflow** produces an APK artifact. No local
+Unity install required. Full detail in
+[docs/06-ANDROID-RELEASE.md](docs/06-ANDROID-RELEASE.md).
+
 ## Tech stack
 
 Unity 6 LTS · C# / .NET Standard 2.1 · URP 2D · portrait 1080×2340
+Android: minSdk 24, IL2CPP, ARM64 + ARMv7

@@ -80,8 +80,18 @@ namespace ComTam.Unity.Bootstrap
             _running = true;
         }
 
+        /// <summary>
+        /// Raised when the Android back button is pressed during service. The UI
+        /// layer shows the pause overlay. Android has a hardware back button and
+        /// iOS does not, so this is genuinely platform-specific behaviour rather
+        /// than a shared concern.
+        /// </summary>
+        public event Action BackPressed;
+
         private void Update()
         {
+            HandleBackButton();
+
             if (!_running) return;
 
             _accumulator += Time.deltaTime;
@@ -124,11 +134,34 @@ namespace ComTam.Unity.Bootstrap
             if (r != CommandResult.Ok) Debug.Log("[GameHost] command refused: " + r);
         }
 
+        /// <summary>
+        /// Back must never quit mid-day. Losing an unfinished day to a stray
+        /// back-tap is the kind of thing that produces one-star reviews, and
+        /// Android users press back constantly.
+        /// </summary>
+        private void HandleBackButton()
+        {
+            if (!Input.GetKeyDown(KeyCode.Escape)) return;   // Escape == Android back
+
+            Action handler = BackPressed;
+            if (handler != null)
+            {
+                handler();
+                return;
+            }
+
+            // No pause UI wired yet: swallow it rather than let Unity's default
+            // behaviour close the app.
+            Debug.Log("[GameHost] back pressed with no handler — ignored");
+        }
+
         private void OnApplicationPause(bool paused)
         {
-            // Phase 1 has no save system yet; this is where SaveSystem.Flush()
-            // will go in milestone 15.
-            if (paused) Debug.Log("[GameHost] paused");
+            // Android backgrounds aggressively and can kill the process without
+            // warning, so this is the last reliable moment to persist.
+            // Phase 1 has no save system yet; SaveSystem.Flush() lands here in
+            // milestone 15.
+            if (paused) Debug.Log("[GameHost] paused (backgrounded)");
         }
     }
 }

@@ -1,0 +1,20 @@
+{
+    "name": "ComTam.Unity.Editor",
+    "rootNamespace": "ComTam.Unity.EditorTools",
+    "references": [
+        "ComTam.Unity",
+        "ComTam.Core",
+        "Unity.TextMeshPro"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
