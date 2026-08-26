@@ -1,0 +1,14 @@
+{
+  "name": "comtam-tycoon-prototype",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser playtest prototype for Cơm Tấm Tycoon. Mirrors ComTam.Core; not the production codebase.",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.62.1"
+  }
+}

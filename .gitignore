@@ -46,3 +46,8 @@ unity/ComTamTycoon/Assets/_Project/Core/**/*.cs
 # ---- OS ----
 .DS_Store
 Thumbs.db
+
+# ---- Prototype ----
+prototype/node_modules/
+prototype/dist/*.png
+package-lock.json

@@ -1,0 +1,1664 @@
+<title>Cơm Tấm Tycoon</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+
+<style>/*
+  Cơm Tấm Tycoon - playtest prototype
+  A night stall lit by its charcoal grill. Single committed visual world:
+  this is a game screen, so it holds its own look on any host ground rather
+  than following the viewer's theme.
+*/
+
+:root {
+  /* Night air and steel, teal-biased rather than neutral grey */
+  --ground:      #14211f;
+  --ground-deep: #0d1716;
+  --surface:     #1e2e2b;
+  --surface-hi:  #263936;
+  --line:        #2f4744;
+
+  /* Brushed aluminium - the tray and the plate */
+  --tray:        #c9d1ce;
+  --tray-dim:    #93a29e;
+
+  /* The one bold accent: charcoal fire. Spent only on heat. */
+  --ember:       #ff6b1a;
+  --ember-hot:   #ffc93c;
+  --ember-deep:  #b23c08;
+
+  --jade:        #4fa372;
+  --danger:      #d64545;
+
+  --chalk:       #f2ede4;
+  --muted:       #7e918c;
+
+  --r-sm: 6px;
+  --r-md: 12px;
+  --r-lg: 18px;
+
+  --font-display: 'Bricolage Grotesque', 'Be Vietnam Pro', system-ui, sans-serif;
+  --font-body: 'Be Vietnam Pro', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(120% 80% at 50% 0%, #1b2c29 0%, var(--ground) 45%, var(--ground-deep) 100%);
+  color: var(--chalk);
+  font-family: var(--font-body);
+  min-height: 100dvh;
+  display: flex;
+  justify-content: center;
+  /* `safe` keeps the top reachable when the content is taller than the
+     viewport, which plain `center` would clip in a flex container. */
+  align-items: center;
+  align-items: safe center;
+  padding: var(--pad);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+:root { --pad: clamp(8px, 2vw, 28px); }
+
+.stall {
+  width: 100%;
+  max-width: 460px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ---------- Status rail ---------- */
+
+.rail {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+
+.rail__money {
+  font-family: var(--font-display);
+  font-size: 1.32rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ember-hot);
+  letter-spacing: -0.01em;
+}
+
+.rail__day {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.rail__timer {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--chalk);
+}
+.rail__timer.is-low { color: var(--danger); }
+
+/* ---------- Queue ---------- */
+
+.queue {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  min-height: 128px;
+}
+
+.seat {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 10px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  transition: border-color .2s, background .2s, transform .2s;
+}
+/* An empty stool, not a hole in the layout. */
+.seat--empty {
+  background: #ffffff05;
+  border-style: dashed;
+  border-color: #2f474488;
+  position: relative;
+}
+.seat--empty::after {
+  content: 'trống';
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 0.6rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #ffffff20;
+  font-weight: 600;
+}
+.seat--next {
+  border-color: var(--ember);
+  background: var(--surface-hi);
+  box-shadow: 0 0 0 1px var(--ember), 0 6px 22px -12px var(--ember);
+}
+.seat--served { border-color: var(--jade); }
+.seat--gone { opacity: .35; }
+
+.seat__face { width: 42px; height: 42px; display: block; }
+
+.seat__name {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.seat__tag {
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #ffffff12;
+  color: var(--muted);
+}
+
+.seat__patience {
+  width: 100%;
+  height: 5px;
+  border-radius: 999px;
+  background: #ffffff14;
+  overflow: hidden;
+}
+.seat__patience > i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width .12s linear, background .3s;
+}
+
+.seat__order {
+  display: flex;
+  gap: 3px;
+  font-size: 0.58rem;
+  color: var(--muted);
+  font-weight: 600;
+  letter-spacing: .04em;
+}
+
+.seat__stars { color: var(--ember-hot); font-size: .8rem; letter-spacing: .05em; }
+
+/* ---------- Grill: the hero ---------- */
+
+.grill {
+  position: relative;
+  background: linear-gradient(180deg, var(--surface) 0%, #1a2725 100%);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  min-height: 168px;
+}
+
+.grill__label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+#grillCanvas {
+  display: block;
+  width: 100%;
+  height: 74px;
+  border-radius: var(--r-sm);
+}
+
+.grill__state {
+  font-family: var(--font-display);
+  font-size: 1.18rem;
+  font-weight: 700;
+  text-align: center;
+  min-height: 1.5em;
+  letter-spacing: -0.005em;
+  transition: color .15s;
+}
+.grill__state[data-d="raw"]        { color: var(--tray-dim); }
+.grill__state[data-d="cooking"]    { color: var(--ember); }
+.grill__state[data-d="perfect"]    { color: var(--ember-hot); text-shadow: 0 0 22px #ffc93c66; }
+.grill__state[data-d="overcooked"] { color: #ff8c42; }
+.grill__state[data-d="burnt"]      { color: var(--danger); }
+.grill__state[data-d="empty"]      { color: var(--muted); font-weight: 500; font-size: .92rem; }
+
+/* ---------- Tray ---------- */
+
+.tray {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  background: linear-gradient(180deg, #e8ecea 0%, var(--tray) 100%);
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+  color: #1b2422;
+}
+
+.tray__slot {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  opacity: .38;
+  transition: opacity .2s;
+}
+.tray__slot.is-on { opacity: 1; }
+
+.tray__dot {
+  width: 15px; height: 15px;
+  border-radius: 50%;
+  border: 2px solid #1b242244;
+  flex: none;
+}
+.tray__slot.is-on .tray__dot { background: var(--jade); border-color: var(--jade); }
+
+.tray__ready {
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: .1em;
+  color: #0f1a18;
+  background: var(--ember-hot);
+  padding: 4px 9px;
+  border-radius: 999px;
+  opacity: 0;
+  transition: opacity .2s;
+}
+.tray__ready.is-on { opacity: 1; }
+
+/* ---------- Actions ---------- */
+
+.actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.btn {
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--chalk);
+  background: var(--surface-hi);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  min-height: 62px;
+  padding: 8px 10px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  transition: transform .07s, background .15s, border-color .15s;
+  user-select: none;
+}
+.btn:active { transform: scale(.97); }
+.btn:focus-visible { outline: 2px solid var(--ember-hot); outline-offset: 2px; }
+.btn__key {
+  font-size: 0.55rem;
+  font-weight: 600;
+  letter-spacing: .1em;
+  color: var(--muted);
+}
+
+.btn--grill { background: linear-gradient(180deg, #34211a, #2a1a15); border-color: #4a2c1e; }
+.btn--grill.is-hot {
+  background: linear-gradient(180deg, var(--ember), var(--ember-deep));
+  border-color: var(--ember-hot);
+  box-shadow: 0 0 26px -6px var(--ember);
+}
+.btn--serve {
+  grid-column: 1 / -1;
+  background: var(--surface-hi);
+}
+.btn--serve.is-ready {
+  background: linear-gradient(180deg, #5cb883, #357954);
+  border-color: #7fd3a2;
+  color: #06120c;
+}
+
+/* ---------- Toast + floats ---------- */
+
+.toast {
+  position: relative;
+  min-height: 1.6em;
+  text-align: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+  transition: color .2s;
+}
+.toast.is-good { color: var(--jade); }
+.toast.is-bad { color: var(--danger); }
+.toast.is-hot { color: var(--ember-hot); }
+
+.floats {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 20;
+}
+.float {
+  position: absolute;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.35rem;
+  color: var(--ember-hot);
+  text-shadow: 0 2px 14px #000a;
+  animation: rise 1.1s cubic-bezier(.2,.7,.3,1) forwards;
+  white-space: nowrap;
+}
+@keyframes rise {
+  0%   { opacity: 0; transform: translate(-50%, 0) scale(.85); }
+  18%  { opacity: 1; transform: translate(-50%, -14px) scale(1.06); }
+  100% { opacity: 0; transform: translate(-50%, -76px) scale(1); }
+}
+
+/* ---------- Overlays ---------- */
+
+.sheet {
+  position: fixed;
+  inset: 0;
+  background: #0a1211ee;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  z-index: 30;
+  backdrop-filter: blur(6px);
+}
+.sheet[hidden] { display: none; }
+
+.card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 22px;
+  max-height: 92dvh;
+  overflow-y: auto;
+}
+
+.card__kicker {
+  font-size: 0.62rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ember);
+  font-weight: 700;
+}
+
+.card__title {
+  font-family: var(--font-display);
+  font-size: 1.85rem;
+  font-weight: 800;
+  margin: 4px 0 16px;
+  line-height: 1.08;
+  text-wrap: balance;
+  letter-spacing: -0.02em;
+}
+
+.ledger { display: flex; flex-direction: column; gap: 7px; margin-bottom: 14px; }
+.ledger__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.88rem;
+  font-variant-numeric: tabular-nums;
+}
+.ledger__row > span:first-child { color: var(--muted); }
+.ledger__row--total {
+  border-top: 1px solid var(--line);
+  padding-top: 9px;
+  margin-top: 3px;
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+.ledger__row--total > span:last-child { color: var(--ember-hot); }
+.pos { color: var(--jade); }
+.neg { color: var(--danger); }
+
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+.stat {
+  background: #ffffff08;
+  border-radius: var(--r-sm);
+  padding: 9px 11px;
+}
+.stat__k {
+  font-size: 0.58rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+}
+.stat__v {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.goal {
+  border-radius: var(--r-sm);
+  padding: 11px 13px;
+  margin-bottom: 16px;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+.goal--met { background: #4fa37222; color: #86d6a8; border: 1px solid #4fa37255; }
+.goal--miss { background: #d6454518; color: #f0a0a0; border: 1px solid #d6454544; }
+
+.card p { color: var(--muted); font-size: .82rem; line-height: 1.5; }
+
+/* ---------- Intro ---------- */
+
+.intro__steps {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 16px 0 20px;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+.intro__steps li {
+  display: flex;
+  gap: 11px;
+  align-items: flex-start;
+  font-size: 0.86rem;
+  line-height: 1.45;
+  counter-increment: step;
+}
+.intro__steps li::before {
+  content: counter(step);
+  flex: none;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: var(--ember);
+  color: #14211f;
+  font-size: .7rem;
+  font-weight: 800;
+  display: grid;
+  place-items: center;
+  margin-top: 1px;
+}
+.intro__steps b { color: var(--ember-hot); font-weight: 700; }
+
+.btn--primary {
+  width: 100%;
+  background: linear-gradient(180deg, var(--ember), var(--ember-deep));
+  border-color: var(--ember-hot);
+  color: #fff;
+  min-height: 56px;
+  font-size: 1rem;
+}
+
+.note {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-size: 0.7rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    transition-duration: .01ms !important;
+  }
+}
+
+@media (max-width: 360px) {
+  .seat__tag { display: none; }
+  .rail__money { font-size: 1.1rem; }
+}
+</style>
+
+<main class="stall">
+  <div class="rail">
+    <div class="rail__money" id="money">100,000đ</div>
+    <div class="rail__day" id="day">Ngày 1</div>
+    <div class="rail__timer" id="timer">2:30</div>
+  </div>
+
+  <div class="queue" id="queue"></div>
+
+  <section class="grill">
+    <div class="grill__label">
+      <span>Bếp than</span>
+      <span>Sườn nướng</span>
+    </div>
+    <canvas id="grillCanvas"></canvas>
+    <div class="grill__state" id="grillState" data-d="empty">Bếp trống</div>
+  </section>
+
+  <div class="tray">
+    <div class="tray__slot" id="trayRice"><span class="tray__dot"></span>Cơm tấm</div>
+    <div class="tray__slot" id="trayPork"><span class="tray__dot"></span>Sườn</div>
+    <span class="tray__ready" id="trayReady">SẴN SÀNG</span>
+  </div>
+
+  <div class="actions">
+    <button class="btn" id="btnRice" type="button">
+      <span>Xới cơm</span>
+      <span class="btn__key">phím 1</span>
+    </button>
+    <button class="btn btn--grill" id="btnGrill" type="button">
+      <span id="btnGrillLabel">Đặt sườn lên</span>
+      <span class="btn__key">phím cách</span>
+    </button>
+    <button class="btn btn--serve" id="btnServe" type="button">
+      <span>Phục vụ khách</span>
+      <span class="btn__key">phím enter</span>
+    </button>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</main>
+
+<div class="floats" id="floats"></div>
+
+<div class="sheet" id="intro">
+  <div class="card">
+    <div class="card__kicker">Bản thử nghiệm — Ngày 1</div>
+    <h1 class="card__title">Cơm Tấm Tycoon</h1>
+    <p>Bạn có một xe cơm tấm nhỏ. Khách tới, gọi <b style="color:var(--chalk)">cơm sườn</b>, và bạn có 2 phút 30 để phục vụ càng nhiều càng tốt.</p>
+    <ol class="intro__steps">
+      <li><b>Xới cơm</b> vào đĩa — một chạm là xong.</li>
+      <li><b>Đặt sườn</b> lên bếp than. Thanh nhiệt bắt đầu chạy.</li>
+      <li>Khi thanh vào <b>vùng vàng</b>, lấy sườn ra ngay. Đúng lúc = chất lượng 100.</li>
+      <li>Để lâu quá thì <b>cháy</b> — mất miếng sườn và khách bực.</li>
+      <li><b>Phục vụ</b> khi đĩa đủ cơm và sườn. Nhanh + ngon = nhiều sao = tiền tip.</li>
+    </ol>
+    <button class="btn btn--primary" id="btnStart" type="button">Mở quán</button>
+    <div class="note">
+      Đây là bản thử nghiệm để trả lời một câu hỏi duy nhất: <b>cơ chế nướng sườn có vui không?</b>
+      Mọi con số đều lấy từ bảng cân bằng thật của game.
+    </div>
+  </div>
+</div>
+
+<div class="sheet" id="results" hidden>
+  <div class="card">
+    <div class="card__kicker">Đóng quán</div>
+    <h2 class="card__title">Kết quả ngày 1</h2>
+    <div id="resultsBody"></div>
+    <button class="btn btn--primary" id="btnAgain" type="button" style="margin-top:16px">Chơi lại</button>
+  </div>
+</div>
+
+<script type="module">// --- core.js ---
+/**
+ * ComTam Tycoon - prototype simulation core.
+ *
+ * A faithful JavaScript port of src/ComTam.Core, kept DOM-free for the same
+ * reason the C# version is Unity-free: the rules must be testable without a
+ * renderer. Every balance value below is copied from /content/balance.json.
+ *
+ * IMPORTANT: this is a PLAYTEST PROTOTYPE, not a second production codebase.
+ * ComTam.Core (C#) remains the source of truth. This exists to answer risk R1
+ * - "is the grill actually fun?" - on a real phone, today. If the two ever
+ * disagree, the C# suite wins and this gets regenerated.
+ */
+
+// ---------------------------------------------------------------------------
+// Balance - mirrors /content/balance.json
+// ---------------------------------------------------------------------------
+
+const BALANCE = {
+  startingMoneyDong: 100000,
+  comSuonPriceDong: 45000,
+
+  riceCostDong: 3000,
+  porkCostDong: 12000,
+  sauceCostDong: 1000,
+
+  dayLengthSeconds: 150,
+  customersOnDay1: 6,
+  firstSpawnDelaySeconds: 2,
+  spawnIntervalSeconds: 22,
+  spawnJitterSeconds: 4,
+  queueCapacity: 3,
+
+  grillRawUntilSeconds: 3.0,
+  grillPerfectStartSeconds: 4.6,
+  grillPerfectEndSeconds: 6.0,
+  grillBurntAtSeconds: 8.0,
+  grillGraceSeconds: 0.08,
+
+  porkCookingQuality: 50,
+  porkOvercookedHighQuality: 70,
+  porkOvercookedLowQuality: 35,
+
+  riceQuality: 85,
+  sauceQuality: 100,
+
+  burnPatiencePenalty: 0.08,
+
+  satWaitWeight: 40,
+  satQualityWeight: 30,
+  satAccuracyWeight: 20,
+  satPriceWeight: 10,
+
+  tipMinStars: 4,
+  tipRateAt4Stars: 0.05,
+  tipRatePerStarAbove4: 0.05,
+
+  eatingSeconds: 3.0,
+  walkToQueueSeconds: 1.0,
+  orderingSeconds: 0.6,
+  receivingFoodSeconds: 0.5,
+  leavingSeconds: 0.8,
+
+  day1GoalCustomers: 5,
+  day1GoalBonusDong: 50000,
+};
+
+const ARCHETYPES = [
+  { id: 'student',        nameVi: 'Sinh viên',            patience: 70, spend: 0.9, tolerance: 40, tipChance: 0.10, short: 'SV'  },
+  { id: 'office_worker',  nameVi: 'Nhân viên văn phòng',  patience: 50, spend: 1.0, tolerance: 60, tipChance: 0.35, short: 'VP'  },
+  { id: 'busy_customer',  nameVi: 'Khách vội',            patience: 30, spend: 1.2, tolerance: 55, tipChance: 0.50, short: 'VỘI' },
+];
+
+const NAMES = [
+  'Nguyễn Minh', 'Trần Thu Hà', 'Lê Văn Dũng', 'Phạm Thị Mai',
+  'Hoàng Anh Tuấn', 'Vũ Ngọc Lan', 'Đặng Quốc Bảo', 'Bùi Thanh Trúc',
+  'Đỗ Hải Nam', 'Ngô Kim Chi', 'Dương Tấn Phát', 'Lý Bích Ngọc',
+];
+
+/** Canonical full-menu weights; normalised over components present. */
+const QUALITY_WEIGHTS = { rice: 0.20, pork: 0.40, egg: 0.20, sauce: 0.20 };
+const REQUIRED = ['rice', 'pork', 'sauce'];
+
+const DONENESS = {
+  RAW: 'raw', COOKING: 'cooking', PERFECT: 'perfect',
+  OVERCOOKED: 'overcooked', BURNT: 'burnt',
+};
+
+const STATE = {
+  WALKING: 'walking', ORDERING: 'ordering', WAITING: 'waiting',
+  RECEIVING: 'receiving', EATING: 'eating', LEAVING: 'leaving',
+  ANGRY: 'angry', DONE: 'done',
+};
+
+// ---------------------------------------------------------------------------
+// Money - integer đồng, never floating point (see Money.cs)
+// ---------------------------------------------------------------------------
+
+/** Round half away from zero, matching C# MidpointRounding.AwayFromZero. */
+function roundAway(v) {
+  return v < 0 ? -Math.round(-v) : Math.round(v);
+}
+
+function scaleMoney(dong, multiplier) {
+  return roundAway(dong * multiplier);
+}
+
+function formatMoney(dong) {
+  return dong.toLocaleString('en-US') + 'đ';
+}
+
+// ---------------------------------------------------------------------------
+// Deterministic RNG (mulberry32)
+//
+// Not the same algorithm as the C# xorshift128+ - cross-language stream parity
+// isn't required here, only that a seed replays identically within this build.
+// ---------------------------------------------------------------------------
+
+function makeRng(seed) {
+  let a = seed >>> 0;
+  const next = () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  return {
+    next,
+    range: (lo, hi) => lo + Math.floor(next() * (hi - lo)),
+    chance: (p) => (p <= 0 ? false : p >= 1 ? true : next() < p),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Cooking
+// ---------------------------------------------------------------------------
+
+const PROFILE = {
+  rawUntil: BALANCE.grillRawUntilSeconds,
+  perfectStart: BALANCE.grillPerfectStartSeconds,
+  perfectEnd: BALANCE.grillPerfectEndSeconds,
+  burntAt: BALANCE.grillBurntAtSeconds,
+};
+
+function evaluateDoneness(t, p = PROFILE) {
+  if (t < p.rawUntil) return DONENESS.RAW;
+  if (t < p.perfectStart) return DONENESS.COOKING;
+  if (t <= p.perfectEnd) return DONENESS.PERFECT;
+  if (t < p.burntAt) return DONENESS.OVERCOOKED;
+  return DONENESS.BURNT;
+}
+
+function qualityAt(t, p = PROFILE) {
+  switch (evaluateDoneness(t, p)) {
+    case DONENESS.RAW: return 0;
+    case DONENESS.COOKING: return BALANCE.porkCookingQuality;
+    case DONENESS.PERFECT: return 100;
+    case DONENESS.OVERCOOKED: {
+      const span = p.burntAt - p.perfectEnd;
+      const k = span <= 0 ? 1 : Math.min(1, Math.max(0, (t - p.perfectEnd) / span));
+      const hi = BALANCE.porkOvercookedHighQuality;
+      const lo = BALANCE.porkOvercookedLowQuality;
+      return roundAway(hi + (lo - hi) * k);
+    }
+    default: return 0;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Plate
+// ---------------------------------------------------------------------------
+
+function plateQuality(components) {
+  if (!components.length) return 0;
+  let weighted = 0;
+  let total = 0;
+  for (const c of components) {
+    const w = QUALITY_WEIGHTS[c.id] || 0;
+    if (w <= 0) continue;
+    weighted += c.quality * w;
+    total += w;
+  }
+  if (total <= 0) return 0;
+  return Math.min(100, Math.max(0, roundAway(weighted / total)));
+}
+
+function plateMatches(components) {
+  return REQUIRED.every((r) => components.some((c) => c.id === r));
+}
+
+// ---------------------------------------------------------------------------
+// Satisfaction
+// ---------------------------------------------------------------------------
+
+function starsFromScore(score) {
+  return Math.min(5, Math.max(1, roundAway(score / 20)));
+}
+
+function evaluateSatisfaction(patience01, quality, accurate) {
+  const b = BALANCE;
+  const score = Math.min(100, Math.max(0,
+    b.satWaitWeight * Math.min(1, Math.max(0, patience01)) +
+    b.satQualityWeight * Math.min(1, Math.max(0, quality / 100)) +
+    b.satAccuracyWeight * (accurate ? 1 : 0) +
+    b.satPriceWeight * 1));
+  const rounded = roundAway(score);
+  return { score: rounded, stars: starsFromScore(rounded) };
+}
+
+function calculateTip(archetype, stars, priceDong, rng) {
+  if (stars < BALANCE.tipMinStars) return 0;
+  if (!rng.chance(archetype.tipChance)) return 0;
+  const rate = BALANCE.tipRateAt4Stars
+    + BALANCE.tipRatePerStarAbove4 * (stars - BALANCE.tipMinStars);
+  return scaleMoney(priceDong, rate);
+}
+
+// ---------------------------------------------------------------------------
+// Day simulation
+// ---------------------------------------------------------------------------
+
+const CMD = {
+  OK: 'ok',
+  WRONG_STATE: 'wrong_state',
+  GRILL_OCCUPIED: 'grill_occupied',
+  GRILL_EMPTY: 'grill_empty',
+  PORK_RAW: 'pork_raw',
+  ALREADY_ON_PLATE: 'already_on_plate',
+  NO_CUSTOMER: 'no_customer',
+  PLATE_INCOMPLETE: 'plate_incomplete',
+};
+
+class DaySimulation {
+  constructor(seed = 1) {
+    this.rng = makeRng(seed);
+    this.seed = seed;
+    this.listeners = {};
+    this.reset();
+  }
+
+  on(evt, fn) {
+    (this.listeners[evt] ||= []).push(fn);
+    return this;
+  }
+
+  emit(evt, payload) {
+    for (const fn of this.listeners[evt] || []) fn(payload);
+  }
+
+  reset() {
+    this.day = 1;
+    this.money = BALANCE.startingMoneyDong;
+    this.elapsed = 0;
+    this.over = false;
+    this.customers = [];
+    this.slots = new Array(BALANCE.queueCapacity).fill(null);
+    this.plate = [];
+    this.grill = { occupied: false, elapsed: 0 };
+    this.nextId = 1;
+    this.spawned = 0;
+    this.toSpawn = BALANCE.customersOnDay1;
+    this.nextSpawnAt = BALANCE.firstSpawnDelaySeconds;
+    this.result = {
+      revenue: 0, tips: 0, ingredientCost: 0, goalBonus: 0,
+      served: 0, lost: 0, burned: 0, totalStars: 0,
+      bestName: null, bestStars: -1, goalMet: false,
+      goalTarget: BALANCE.day1GoalCustomers,
+    };
+  }
+
+  get timeRemaining() { return Math.max(0, BALANCE.dayLengthSeconds - this.elapsed); }
+  get windowClosed() { return this.elapsed >= BALANCE.dayLengthSeconds; }
+  get profit() {
+    const r = this.result;
+    return r.revenue + r.tips + r.goalBonus - r.ingredientCost;
+  }
+  get averageStars() {
+    return this.result.served ? this.result.totalStars / this.result.served : 0;
+  }
+
+  // -- tick -----------------------------------------------------------------
+
+  tick(dt) {
+    if (this.over || dt <= 0) return;
+    this.elapsed += dt;
+    this.#tickSpawn();
+    this.#tickGrill(dt);
+    this.#tickCustomers(dt);
+    if (this.#shouldClose()) this.#close();
+  }
+
+  #freeSlot() { return this.slots.indexOf(null); }
+
+  #tickSpawn() {
+    if (this.windowClosed || this.spawned >= this.toSpawn) return;
+    if (this.elapsed < this.nextSpawnAt) return;
+    const slot = this.#freeSlot();
+    if (slot < 0) return;
+
+    const archetype = ARCHETYPES[this.rng.range(0, ARCHETYPES.length)];
+    const c = {
+      id: this.nextId++,
+      archetype,
+      name: NAMES[this.rng.range(0, NAMES.length)],
+      state: STATE.WALKING,
+      slot,
+      patience: 1,
+      stateElapsed: 0,
+      stars: 0,
+      paid: 0,
+      tip: 0,
+    };
+    this.slots[slot] = c;
+    this.customers.push(c);
+    this.spawned++;
+
+    const jitter = (this.rng.next() * 2 - 1) * BALANCE.spawnJitterSeconds;
+    this.nextSpawnAt = this.elapsed + BALANCE.spawnIntervalSeconds + jitter;
+    this.emit('arrive', c);
+  }
+
+  #tickGrill(dt) {
+    if (!this.grill.occupied) return;
+    const was = evaluateDoneness(this.grill.elapsed) === DONENESS.BURNT;
+    this.grill.elapsed += dt;
+    const now = evaluateDoneness(this.grill.elapsed) === DONENESS.BURNT;
+    if (!(now && !was)) return;
+
+    this.grill.occupied = false;
+    this.grill.elapsed = 0;
+    this.result.burned++;
+    this.result.ingredientCost += BALANCE.porkCostDong;
+    for (const c of this.customers) {
+      if (c.state === STATE.WAITING) {
+        c.patience = Math.max(0, c.patience - BALANCE.burnPatiencePenalty);
+      }
+    }
+    this.emit('burn');
+  }
+
+  #tickCustomers(dt) {
+    for (const c of this.customers) {
+      if (c.state === STATE.DONE) continue;
+      c.stateElapsed += dt;
+
+      switch (c.state) {
+        case STATE.WALKING:
+          if (c.stateElapsed >= BALANCE.walkToQueueSeconds) this.#setState(c, STATE.ORDERING);
+          break;
+        case STATE.ORDERING:
+          if (c.stateElapsed >= BALANCE.orderingSeconds) {
+            this.#setState(c, STATE.WAITING);
+            this.emit('order', c);
+          }
+          break;
+        case STATE.WAITING:
+          c.patience = Math.max(0, c.patience - dt / c.archetype.patience);
+          if (c.patience <= 0) {
+            this.#setState(c, STATE.ANGRY);
+            this.#freeCustomerSlot(c);
+            this.result.lost++;
+            this.emit('angry', c);
+          }
+          break;
+        case STATE.RECEIVING:
+          if (c.stateElapsed >= BALANCE.receivingFoodSeconds) this.#setState(c, STATE.EATING);
+          break;
+        case STATE.EATING:
+          if (c.stateElapsed >= BALANCE.eatingSeconds) {
+            this.#setState(c, STATE.LEAVING);
+            this.#freeCustomerSlot(c);
+          }
+          break;
+        case STATE.LEAVING:
+        case STATE.ANGRY:
+          if (c.stateElapsed >= BALANCE.leavingSeconds) this.#setState(c, STATE.DONE);
+          break;
+      }
+    }
+  }
+
+  #setState(c, s) { c.state = s; c.stateElapsed = 0; }
+
+  #freeCustomerSlot(c) {
+    if (c.slot >= 0 && this.slots[c.slot] === c) this.slots[c.slot] = null;
+    c.slot = -1;
+  }
+
+  #shouldClose() {
+    if (!this.windowClosed) return false;
+    if (this.spawned < this.toSpawn) return true;
+    return this.customers.every((c) => c.state === STATE.DONE);
+  }
+
+  #close() {
+    const r = this.result;
+    r.goalMet = r.served >= r.goalTarget;
+    r.goalBonus = r.goalMet ? BALANCE.day1GoalBonusDong : 0;
+    this.money += r.goalBonus;
+    this.over = true;
+    this.emit('dayend', r);
+  }
+
+  forceClose() {
+    if (this.over) return;
+    this.elapsed = BALANCE.dayLengthSeconds;
+    for (const c of this.customers) c.state = STATE.DONE;
+    this.#close();
+  }
+
+  // -- commands -------------------------------------------------------------
+
+  hasComponent(id) { return this.plate.some((c) => c.id === id); }
+
+  scoopRice() {
+    if (this.over) return CMD.WRONG_STATE;
+    if (this.hasComponent('rice')) return CMD.ALREADY_ON_PLATE;
+    this.plate.push({ id: 'rice', quality: BALANCE.riceQuality });
+    this.emit('rice');
+    return CMD.OK;
+  }
+
+  placePork() {
+    if (this.over) return CMD.WRONG_STATE;
+    if (this.hasComponent('pork')) return CMD.ALREADY_ON_PLATE;
+    if (this.grill.occupied) return CMD.GRILL_OCCUPIED;
+    this.grill.occupied = true;
+    this.grill.elapsed = 0;
+    this.emit('place');
+    return CMD.OK;
+  }
+
+  takePork() {
+    if (this.over) return CMD.WRONG_STATE;
+    if (!this.grill.occupied) return CMD.GRILL_EMPTY;
+
+    const t = this.grill.elapsed;
+    const raw = evaluateDoneness(t);
+    if (raw === DONENESS.RAW) return CMD.PORK_RAW;
+
+    // Late-tap grace: a tap just past the window still reads as Perfect.
+    let effective = t;
+    if (raw === DONENESS.OVERCOOKED && t - PROFILE.perfectEnd <= BALANCE.grillGraceSeconds) {
+      effective = PROFILE.perfectEnd;
+    }
+
+    const doneness = evaluateDoneness(effective);
+    const quality = qualityAt(effective);
+    this.grill.occupied = false;
+    this.grill.elapsed = 0;
+    this.plate.push({ id: 'pork', quality });
+    this.emit('cooked', { doneness, quality });
+    return CMD.OK;
+  }
+
+  nextServable() {
+    let best = null;
+    for (const c of this.customers) {
+      if (c.state !== STATE.WAITING) continue;
+      if (!best || c.id < best.id) best = c;
+    }
+    return best;
+  }
+
+  serve() {
+    if (this.over) return CMD.WRONG_STATE;
+    const c = this.nextServable();
+    if (!c) return CMD.NO_CUSTOMER;
+    if (!this.hasComponent('rice') || !this.hasComponent('pork')) return CMD.PLATE_INCOMPLETE;
+
+    // Sauce is automatic - a tap that can never be wrong is not a mechanic.
+    if (!this.hasComponent('sauce')) {
+      this.plate.push({ id: 'sauce', quality: BALANCE.sauceQuality });
+    }
+
+    const quality = plateQuality(this.plate);
+    const accurate = plateMatches(this.plate);
+    const sat = evaluateSatisfaction(c.patience, quality, accurate);
+    const paid = scaleMoney(BALANCE.comSuonPriceDong, c.archetype.spend);
+    const tip = calculateTip(c.archetype, sat.stars, paid, this.rng);
+
+    this.money += paid + tip;
+    const r = this.result;
+    r.served++;
+    r.totalStars += sat.stars;
+    r.revenue += paid;
+    r.tips += tip;
+    r.ingredientCost += BALANCE.riceCostDong + BALANCE.porkCostDong + BALANCE.sauceCostDong;
+    if (sat.stars > r.bestStars) { r.bestStars = sat.stars; r.bestName = c.name; }
+
+    c.stars = sat.stars;
+    c.paid = paid;
+    c.tip = tip;
+    this.#setState(c, STATE.RECEIVING);
+
+    this.plate = [];
+    this.emit('served', { customer: c, stars: sat.stars, quality, paid, tip });
+    return CMD.OK;
+  }
+
+  discardPlate() {
+    if (this.over) return CMD.WRONG_STATE;
+    this.plate = [];
+    this.emit('discard');
+    return CMD.OK;
+  }
+}
+
+function moodOf(patience) {
+  if (patience >= 0.8) return 'happy';
+  if (patience >= 0.5) return 'normal';
+  if (patience >= 0.2) return 'impatient';
+  return 'angry';
+}
+
+// --- app.js ---
+/**
+ * Presentation layer for the prototype.
+ *
+ * Mirrors the architecture of the real client: this file reads simulation state
+ * and renders it, and holds no game rules. Every number on screen comes from
+ * core.js.
+ */
+
+
+const FIXED_STEP = 0.05; // 20 Hz, matching the Unity host
+
+const $ = (id) => document.getElementById(id);
+
+const el = {
+  money: $('money'), day: $('day'), timer: $('timer'),
+  queue: $('queue'),
+  canvas: $('grillCanvas'), grillState: $('grillState'),
+  trayRice: $('trayRice'), trayPork: $('trayPork'), trayReady: $('trayReady'),
+  btnRice: $('btnRice'), btnGrill: $('btnGrill'), btnServe: $('btnServe'),
+  btnGrillLabel: $('btnGrillLabel'),
+  toast: $('toast'), floats: $('floats'),
+  intro: $('intro'), btnStart: $('btnStart'),
+  results: $('results'), resultsBody: $('resultsBody'), btnAgain: $('btnAgain'),
+};
+
+let sim = null;
+let running = false;
+let raf = 0;
+let lastTs = 0;
+let acc = 0;
+let toastUntil = 0;
+
+// ---------------------------------------------------------------------------
+// Faces - drawn, not emoji, so mood reads as part of the art direction
+// ---------------------------------------------------------------------------
+
+const MOUTHS = {
+  happy: 'M15 27 Q21 33 27 27',
+  normal: 'M16 28 H26',
+  impatient: 'M16 30 Q21 26 26 30',
+  angry: 'M15 31 Q21 25 27 31',
+  eating: 'M16 27 Q21 32 26 27',
+};
+const FACE_TINT = {
+  happy: '#4fa372', normal: '#c9d1ce', impatient: '#ff8c42',
+  angry: '#d64545', eating: '#ffc93c',
+};
+
+function faceSvg(mood) {
+  const tint = FACE_TINT[mood];
+  const brows = (mood === 'angry' || mood === 'impatient')
+    ? `<path d="M13 15 L19 18" stroke="${tint}" stroke-width="2" stroke-linecap="round"/>
+       <path d="M29 15 L23 18" stroke="${tint}" stroke-width="2" stroke-linecap="round"/>`
+    : '';
+  return `<svg class="seat__face" viewBox="0 0 42 42" aria-hidden="true">
+    <circle cx="21" cy="21" r="19" fill="${tint}22" stroke="${tint}" stroke-width="2"/>
+    <circle cx="15" cy="21" r="2.2" fill="${tint}"/>
+    <circle cx="27" cy="21" r="2.2" fill="${tint}"/>
+    ${brows}
+    <path d="${MOUTHS[mood]}" stroke="${tint}" stroke-width="2.2"
+          fill="none" stroke-linecap="round"/>
+  </svg>`;
+}
+
+function patienceColour(p) {
+  if (p >= 0.8) return '#4fa372';
+  if (p >= 0.5) return '#ffc93c';
+  if (p >= 0.2) return '#ff8c42';
+  return '#d64545';
+}
+
+// ---------------------------------------------------------------------------
+// Grill canvas - the hero element
+// ---------------------------------------------------------------------------
+
+const ctx = el.canvas.getContext('2d');
+let embers = [];
+
+function sizeCanvas() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const r = el.canvas.getBoundingClientRect();
+  el.canvas.width = Math.max(1, Math.round(r.width * dpr));
+  el.canvas.height = Math.max(1, Math.round(r.height * dpr));
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+function drawGrill(now) {
+  const r = el.canvas.getBoundingClientRect();
+  const W = r.width;
+  const H = r.height;
+  const padX = 10;
+  const barY = H * 0.46;
+  const barH = 22;
+  const barW = W - padX * 2;
+
+  ctx.clearRect(0, 0, W, H);
+
+  const occupied = sim.grill.occupied;
+  const t = sim.grill.elapsed;
+  const total = PROFILE.burntAt;
+  const x = (s) => padX + (s / total) * barW;
+
+  // Bar bed
+  ctx.fillStyle = '#101b19';
+  roundRect(ctx, padX, barY, barW, barH, 5);
+  ctx.fill();
+
+  // Zones. Only the perfect band is bright - everything else stays quiet so
+  // the target is the one thing the eye lands on.
+  const zones = [
+    [0, PROFILE.rawUntil, '#2b3d3a'],
+    [PROFILE.rawUntil, PROFILE.perfectStart, '#7a3f14'],
+    [PROFILE.perfectEnd, PROFILE.burntAt, '#6d2a0d'],
+  ];
+  for (const [a, b, col] of zones) {
+    ctx.fillStyle = col;
+    ctx.fillRect(x(a), barY, x(b) - x(a), barH);
+  }
+
+  // Perfect band, with a pulse while the pork is actually in it
+  const inPerfect = occupied && evaluateDoneness(t) === DONENESS.PERFECT;
+  const pulse = inPerfect ? 0.72 + 0.28 * Math.sin(now / 90) : 0.5;
+  const px = x(PROFILE.perfectStart);
+  const pw = x(PROFILE.perfectEnd) - px;
+  const grad = ctx.createLinearGradient(px, 0, px + pw, 0);
+  grad.addColorStop(0, `rgba(255,140,26,${pulse})`);
+  grad.addColorStop(0.5, `rgba(255,201,60,${pulse})`);
+  grad.addColorStop(1, `rgba(255,140,26,${pulse})`);
+  ctx.fillStyle = grad;
+  ctx.fillRect(px, barY, pw, barH);
+
+  if (inPerfect) {
+    ctx.save();
+    ctx.shadowColor = '#ffc93c';
+    ctx.shadowBlur = 26;
+    ctx.fillStyle = 'rgba(255,201,60,.34)';
+    ctx.fillRect(px, barY, pw, barH);
+    ctx.restore();
+  }
+
+  // Zone ticks
+  ctx.strokeStyle = '#0d1716';
+  ctx.lineWidth = 2;
+  for (const s of [PROFILE.rawUntil, PROFILE.perfectStart, PROFILE.perfectEnd]) {
+    ctx.beginPath();
+    ctx.moveTo(x(s), barY);
+    ctx.lineTo(x(s), barY + barH);
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle = '#2f4744';
+  ctx.lineWidth = 1;
+  roundRect(ctx, padX, barY, barW, barH, 5);
+  ctx.stroke();
+
+  if (occupied) {
+    const hx = Math.min(x(t), padX + barW);
+
+    // Trail behind the playhead
+    const trail = ctx.createLinearGradient(padX, 0, hx, 0);
+    trail.addColorStop(0, 'rgba(255,107,26,0)');
+    trail.addColorStop(1, 'rgba(255,107,26,.42)');
+    ctx.fillStyle = trail;
+    ctx.fillRect(padX, barY, hx - padX, barH);
+
+    // Playhead
+    ctx.save();
+    ctx.shadowColor = '#fff';
+    ctx.shadowBlur = 12;
+    ctx.fillStyle = '#fff6e8';
+    ctx.fillRect(hx - 1.5, barY - 6, 3, barH + 12);
+    ctx.restore();
+
+    // The chop
+    const chopY = barY - 22;
+    const heat = Math.min(1, t / PROFILE.burntAt);
+    const burnt = evaluateDoneness(t) === DONENESS.BURNT;
+    ctx.fillStyle = burnt
+      ? '#241d1a'
+      : `rgb(${Math.round(214 - 90 * heat)},${Math.round(120 - 70 * heat)},${Math.round(86 - 50 * heat)})`;
+    roundRect(ctx, hx - 15, chopY, 30, 15, 4);
+    ctx.fill();
+    ctx.strokeStyle = burnt ? '#120e0d' : '#00000055';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    spawnEmbers(hx, chopY, heat, burnt);
+  }
+
+  drawEmbers(ctx);
+}
+
+function spawnEmbers(x, y, heat, burnt) {
+  if (embers.length > 60) return;
+  if (Math.random() > 0.35 + heat * 0.4) return;
+  embers.push({
+    x: x + (Math.random() - 0.5) * 26,
+    y: y + 8,
+    vy: -0.4 - Math.random() * 0.9,
+    vx: (Math.random() - 0.5) * 0.35,
+    life: 1,
+    burnt,
+  });
+}
+
+function drawEmbers(c) {
+  for (const e of embers) {
+    e.x += e.vx;
+    e.y += e.vy;
+    e.life -= 0.018;
+    if (e.life <= 0) continue;
+    c.globalAlpha = Math.max(0, e.life) * 0.85;
+    c.fillStyle = e.burnt ? '#6b6b6b' : (e.life > 0.6 ? '#ffc93c' : '#ff6b1a');
+    c.beginPath();
+    c.arc(e.x, e.y, e.burnt ? 2.2 : 1.5, 0, Math.PI * 2);
+    c.fill();
+  }
+  c.globalAlpha = 1;
+  embers = embers.filter((e) => e.life > 0);
+}
+
+function roundRect(c, x, y, w, h, r) {
+  c.beginPath();
+  c.moveTo(x + r, y);
+  c.arcTo(x + w, y, x + w, y + h, r);
+  c.arcTo(x + w, y + h, x, y + h, r);
+  c.arcTo(x, y + h, x, y, r);
+  c.arcTo(x, y, x + w, y, r);
+  c.closePath();
+}
+
+// ---------------------------------------------------------------------------
+// DOM rendering
+// ---------------------------------------------------------------------------
+
+const DONENESS_LABEL = {
+  [DONENESS.RAW]: 'CÒN SỐNG',
+  [DONENESS.COOKING]: 'ĐANG NƯỚNG',
+  [DONENESS.PERFECT]: 'VỪA CHÍN — LẤY NGAY!',
+  [DONENESS.OVERCOOKED]: 'HƠI QUÁ — NHANH!',
+  [DONENESS.BURNT]: 'CHÁY RỒI!',
+};
+
+function render() {
+  el.money.textContent = formatMoney(sim.money);
+  el.day.textContent = `Ngày ${sim.day}`;
+
+  const secs = Math.ceil(sim.timeRemaining);
+  el.timer.textContent = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+  el.timer.classList.toggle('is-low', secs <= 20);
+
+  renderQueue();
+  renderGrillState();
+  renderTray();
+}
+
+function renderQueue() {
+  const next = sim.nextServable();
+  const html = [];
+
+  for (let i = 0; i < BALANCE.queueCapacity; i++) {
+    const c = sim.slots[i];
+    if (!c) {
+      html.push('<div class="seat seat--empty"></div>');
+      continue;
+    }
+
+    const isNext = next && c.id === next.id;
+    const served = c.state === STATE.RECEIVING || c.state === STATE.EATING;
+    const gone = c.state === STATE.ANGRY;
+
+    let mood = moodOf(c.patience);
+    if (served) mood = 'eating';
+    if (gone) mood = 'angry';
+
+    const cls = ['seat'];
+    if (isNext) cls.push('seat--next');
+    if (served) cls.push('seat--served');
+    if (gone) cls.push('seat--gone');
+
+    let bottom;
+    if (served) {
+      bottom = `<div class="seat__stars">${'★'.repeat(c.stars)}</div>`;
+    } else if (gone) {
+      bottom = '<div class="seat__order">BỎ ĐI</div>';
+    } else if (c.state === STATE.WAITING) {
+      const pct = Math.max(0, Math.min(1, c.patience)) * 100;
+      bottom = `<div class="seat__patience"><i style="width:${pct}%;background:${patienceColour(c.patience)}"></i></div>
+                <div class="seat__order">CƠM + SƯỜN</div>`;
+    } else {
+      bottom = '<div class="seat__order">đang tới…</div>';
+    }
+
+    html.push(`<div class="${cls.join(' ')}">
+      ${faceSvg(mood)}
+      <div class="seat__name">${escapeHtml(c.name)}</div>
+      <div class="seat__tag">${c.archetype.short}</div>
+      ${bottom}
+    </div>`);
+  }
+  el.queue.innerHTML = html.join('');
+}
+
+function renderGrillState() {
+  if (!sim.grill.occupied) {
+    el.grillState.textContent = 'Bếp trống';
+    el.grillState.dataset.d = 'empty';
+    el.btnGrill.classList.remove('is-hot');
+    el.btnGrillLabel.textContent = 'Đặt sườn lên';
+    return;
+  }
+  const d = evaluateDoneness(sim.grill.elapsed);
+  el.grillState.textContent = DONENESS_LABEL[d];
+  el.grillState.dataset.d = d;
+  el.btnGrill.classList.toggle('is-hot', d === DONENESS.PERFECT);
+  el.btnGrillLabel.textContent = d === DONENESS.RAW ? 'Chưa chín' : 'Lấy sườn ra';
+}
+
+function renderTray() {
+  const rice = sim.hasComponent('rice');
+  const pork = sim.hasComponent('pork');
+  el.trayRice.classList.toggle('is-on', rice);
+  el.trayPork.classList.toggle('is-on', pork);
+  const ready = rice && pork;
+  el.trayReady.classList.toggle('is-on', ready);
+  el.btnServe.classList.toggle('is-ready', ready && !!sim.nextServable());
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (ch) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+  ));
+}
+
+// ---------------------------------------------------------------------------
+// Feedback
+// ---------------------------------------------------------------------------
+
+function toast(msg, kind = '') {
+  el.toast.textContent = msg;
+  el.toast.className = 'toast' + (kind ? ' is-' + kind : '');
+  toastUntil = performance.now() + 1700;
+}
+
+function floatText(text, colour) {
+  const r = el.canvas.getBoundingClientRect();
+  const n = document.createElement('div');
+  n.className = 'float';
+  n.textContent = text;
+  // Stagger against anything still in flight so a cook and a serve firing
+  // back-to-back don't stack on top of each other.
+  const offset = el.floats.childElementCount * 26;
+  n.style.left = `${r.left + r.width / 2}px`;
+  n.style.top = `${r.top + r.height / 2 + offset}px`;
+  if (colour) n.style.color = colour;
+  el.floats.appendChild(n);
+  setTimeout(() => n.remove(), 1200);
+}
+
+function buzz(ms) {
+  if (navigator.vibrate) { try { navigator.vibrate(ms); } catch { /* ignore */ } }
+}
+
+// ---------------------------------------------------------------------------
+// Commands
+// ---------------------------------------------------------------------------
+
+const REFUSAL = {
+  [CMD.ALREADY_ON_PLATE]: ['Đĩa đã có rồi', ''],
+  [CMD.GRILL_OCCUPIED]: ['Bếp đang bận', ''],
+  [CMD.PORK_RAW]: ['Sườn còn sống — đợi thêm!', 'bad'],
+  [CMD.NO_CUSTOMER]: ['Chưa có khách đợi món', ''],
+  [CMD.PLATE_INCOMPLETE]: ['Cần cơm + sườn', 'bad'],
+};
+
+function report(result) {
+  const r = REFUSAL[result];
+  if (r) toast(r[0], r[1]);
+}
+
+function doRice() { report(sim.scoopRice()); render(); }
+
+function doGrill() {
+  report(sim.grill.occupied ? sim.takePork() : sim.placePork());
+  render();
+}
+
+function doServe() { report(sim.serve()); render(); }
+
+// ---------------------------------------------------------------------------
+// Loop
+// ---------------------------------------------------------------------------
+
+function frame(ts) {
+  if (!running) return;
+  if (!lastTs) lastTs = ts;
+  acc += Math.min(0.25, (ts - lastTs) / 1000);
+  lastTs = ts;
+
+  while (acc >= FIXED_STEP) {
+    sim.tick(FIXED_STEP);
+    acc -= FIXED_STEP;
+    if (sim.over) break;
+  }
+
+  drawGrill(ts);
+  render();
+
+  if (toastUntil && ts > toastUntil) {
+    el.toast.textContent = '';
+    el.toast.className = 'toast';
+    toastUntil = 0;
+  }
+
+  if (sim.over) { running = false; showResults(); return; }
+  raf = requestAnimationFrame(frame);
+}
+
+// ---------------------------------------------------------------------------
+// Results
+// ---------------------------------------------------------------------------
+
+function showResults() {
+  const r = sim.result;
+  const row = (k, v, cls = '') =>
+    `<div class="ledger__row"><span>${k}</span><span class="${cls}">${v}</span></div>`;
+
+  el.resultsBody.innerHTML = `
+    <div class="ledger">
+      ${row('Doanh thu', '+' + formatMoney(r.revenue), 'pos')}
+      ${row('Tiền tip', '+' + formatMoney(r.tips), 'pos')}
+      ${row('Nguyên liệu', '−' + formatMoney(r.ingredientCost), 'neg')}
+      ${row('Thưởng mục tiêu', '+' + formatMoney(r.goalBonus), 'pos')}
+      <div class="ledger__row ledger__row--total">
+        <span>Lợi nhuận</span><span>${formatMoney(sim.profit)}</span>
+      </div>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="stat__k">Khách phục vụ</div><div class="stat__v">${r.served}</div></div>
+      <div class="stat"><div class="stat__k">Đánh giá TB</div><div class="stat__v">${sim.averageStars.toFixed(1)}★</div></div>
+      <div class="stat"><div class="stat__k">Khách bỏ đi</div><div class="stat__v">${r.lost}</div></div>
+      <div class="stat"><div class="stat__k">Sườn cháy</div><div class="stat__v">${r.burned}</div></div>
+    </div>
+    <div class="goal ${r.goalMet ? 'goal--met' : 'goal--miss'}">
+      ${r.goalMet
+        ? `Mục tiêu hoàn thành — phục vụ ${r.served}/${r.goalTarget} khách. Thưởng ${formatMoney(BALANCE.day1GoalBonusDong)}.`
+        : `Chưa đạt mục tiêu — phục vụ ${r.served}/${r.goalTarget} khách.`}
+    </div>
+    ${r.bestName ? `<p>Khách hài lòng nhất: <b style="color:var(--chalk)">${escapeHtml(r.bestName)}</b> — ${r.bestStars}★</p>` : ''}
+    <div class="note">
+      Đây là bản thử nghiệm Ngày 1. Câu hỏi quan trọng nhất:
+      <b style="color:var(--ember-hot)">nướng sườn có đã tay không?</b>
+      Nếu chưa, cần sửa cơ chế nướng trước khi làm thêm bất cứ thứ gì.
+    </div>`;
+  el.results.hidden = false;
+}
+
+// ---------------------------------------------------------------------------
+// Wiring
+// ---------------------------------------------------------------------------
+
+function newGame() {
+  sim = new DaySimulation((Math.random() * 1e9) | 0);
+  embers = [];
+
+  sim.on('arrive', (c) => toast(`${c.name} vừa tới`, ''));
+  sim.on('burn', () => {
+    toast('Sườn cháy! Mất 12,000đ', 'bad');
+    floatText('−' + formatMoney(BALANCE.porkCostDong), '#d64545');
+    buzz([40, 60, 40]);
+  });
+  sim.on('angry', (c) => { toast(`${c.name} bỏ đi vì đợi lâu`, 'bad'); buzz(50); });
+  sim.on('cooked', (e) => {
+    if (e.doneness === DONENESS.PERFECT) {
+      toast('Vừa chín! Chất lượng 100', 'hot');
+      floatText('HOÀN HẢO', '#ffc93c');
+      buzz(18);
+    } else {
+      toast(`Sườn ${e.doneness === DONENESS.COOKING ? 'còn tái' : 'hơi quá'} — chất lượng ${e.quality}`, '');
+      buzz(8);
+    }
+  });
+  sim.on('served', (e) => {
+    const tip = e.tip > 0 ? ` +tip ${formatMoney(e.tip)}` : '';
+    toast(`${'★'.repeat(e.stars)}  ${e.customer.name}${tip}`, 'good');
+    floatText('+' + formatMoney(e.paid + e.tip), '#7fd3a2');
+    buzz(12);
+  });
+
+  el.results.hidden = true;
+  running = true;
+  lastTs = 0;
+  acc = 0;
+  sizeCanvas();
+  render();
+  cancelAnimationFrame(raf);
+  raf = requestAnimationFrame(frame);
+}
+
+el.btnRice.addEventListener('click', doRice);
+el.btnGrill.addEventListener('click', doGrill);
+el.btnServe.addEventListener('click', doServe);
+el.btnStart.addEventListener('click', () => { el.intro.hidden = true; newGame(); });
+el.btnAgain.addEventListener('click', newGame);
+
+window.addEventListener('keydown', (e) => {
+  if (el.intro.hidden === false || !sim || sim.over) return;
+  if (e.key === '1') { e.preventDefault(); doRice(); }
+  else if (e.code === 'Space') { e.preventDefault(); doGrill(); }
+  else if (e.key === 'Enter') { e.preventDefault(); doServe(); }
+});
+
+window.addEventListener('resize', () => { sizeCanvas(); });
+
+// Draw the empty grill behind the intro card so the page is not blank.
+sim = new DaySimulation(1);
+sizeCanvas();
+render();
+drawGrill(0);
+</script>

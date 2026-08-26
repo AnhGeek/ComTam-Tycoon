@@ -1,0 +1,82 @@
+<title>Cơm Tấm Tycoon</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+
+<style>/*{{STYLES}}*/</style>
+
+<main class="stall">
+  <div class="rail">
+    <div class="rail__money" id="money">100,000đ</div>
+    <div class="rail__day" id="day">Ngày 1</div>
+    <div class="rail__timer" id="timer">2:30</div>
+  </div>
+
+  <div class="queue" id="queue"></div>
+
+  <section class="grill">
+    <div class="grill__label">
+      <span>Bếp than</span>
+      <span>Sườn nướng</span>
+    </div>
+    <canvas id="grillCanvas"></canvas>
+    <div class="grill__state" id="grillState" data-d="empty">Bếp trống</div>
+  </section>
+
+  <div class="tray">
+    <div class="tray__slot" id="trayRice"><span class="tray__dot"></span>Cơm tấm</div>
+    <div class="tray__slot" id="trayPork"><span class="tray__dot"></span>Sườn</div>
+    <span class="tray__ready" id="trayReady">SẴN SÀNG</span>
+  </div>
+
+  <div class="actions">
+    <button class="btn" id="btnRice" type="button">
+      <span>Xới cơm</span>
+      <span class="btn__key">phím 1</span>
+    </button>
+    <button class="btn btn--grill" id="btnGrill" type="button">
+      <span id="btnGrillLabel">Đặt sườn lên</span>
+      <span class="btn__key">phím cách</span>
+    </button>
+    <button class="btn btn--serve" id="btnServe" type="button">
+      <span>Phục vụ khách</span>
+      <span class="btn__key">phím enter</span>
+    </button>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</main>
+
+<div class="floats" id="floats"></div>
+
+<div class="sheet" id="intro">
+  <div class="card">
+    <div class="card__kicker">Bản thử nghiệm — Ngày 1</div>
+    <h1 class="card__title">Cơm Tấm Tycoon</h1>
+    <p>Bạn có một xe cơm tấm nhỏ. Khách tới, gọi <b style="color:var(--chalk)">cơm sườn</b>, và bạn có 2 phút 30 để phục vụ càng nhiều càng tốt.</p>
+    <ol class="intro__steps">
+      <li><b>Xới cơm</b> vào đĩa — một chạm là xong.</li>
+      <li><b>Đặt sườn</b> lên bếp than. Thanh nhiệt bắt đầu chạy.</li>
+      <li>Khi thanh vào <b>vùng vàng</b>, lấy sườn ra ngay. Đúng lúc = chất lượng 100.</li>
+      <li>Để lâu quá thì <b>cháy</b> — mất miếng sườn và khách bực.</li>
+      <li><b>Phục vụ</b> khi đĩa đủ cơm và sườn. Nhanh + ngon = nhiều sao = tiền tip.</li>
+    </ol>
+    <button class="btn btn--primary" id="btnStart" type="button">Mở quán</button>
+    <div class="note">
+      Đây là bản thử nghiệm để trả lời một câu hỏi duy nhất: <b>cơ chế nướng sườn có vui không?</b>
+      Mọi con số đều lấy từ bảng cân bằng thật của game.
+    </div>
+  </div>
+</div>
+
+<div class="sheet" id="results" hidden>
+  <div class="card">
+    <div class="card__kicker">Đóng quán</div>
+    <h2 class="card__title">Kết quả ngày 1</h2>
+    <div id="resultsBody"></div>
+    <button class="btn btn--primary" id="btnAgain" type="button" style="margin-top:16px">Chơi lại</button>
+  </div>
+</div>
+
+<script type="module">/*{{APP}}*/</script>
