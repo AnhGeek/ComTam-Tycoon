@@ -40,6 +40,7 @@ func _ready() -> void:
 	GameManager.money_changed.connect(_refresh_hud)
 	GameManager.stock_changed.connect(_refresh_tags)
 	GameManager.state_changed.connect(_refresh_all)
+	GameManager.reputation_changed.connect(_refresh_hud)
 	GameManager.day_ended.connect(_on_day_ended)
 	GameManager.offline_earned.connect(_on_offline_earned)
 	_refresh_all()

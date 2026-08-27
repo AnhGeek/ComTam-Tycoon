@@ -1373,10 +1373,10 @@ func _update_server(a: Dictionary, node: Node3D, rig: Dictionary, t: float, delt
 
 ## Một chỗ bất kỳ trong lòng quán để con chó lững thững đi tới.
 func _dog_target(floor_i: int) -> Vector3:
-    var hw := ROOM_W * 0.5
-    var hd := ROOM_D * 0.5
     for _try in 8:
-        var p := Vector3(randf_range(-hw + 0.7, hw - 0.7), 0.0, randf_range(-hd + 2.1, hd - 0.5))
+        var r := _dog_bounds()
+        var p := Vector3(randf_range(r.position.x, r.end.x), 0.0,
+            randf_range(r.position.y, r.end.y))
         # tránh chui vào bàn ghế cho khỏi lồng vào nhau
         var clear := true
         for c in _tables.get(floor_i, []):
@@ -1386,12 +1386,27 @@ func _dog_target(floor_i: int) -> Vector3:
                 break
         if clear:
             return p
-    return Vector3(0, 0, hd - 1.2)
+    return Vector3(0, 0, ROOM_D * 0.5 - 1.6)
+
+
+## Khoảnh sân con chó được phép đi: chừa hẳn một mét với ba bức tường VÀ với mép
+## trước để trống — bén mảng ra tới đó là trông như nó chạy ra vỉa hè.
+func _dog_bounds() -> Rect2:
+    var hw := ROOM_W * 0.5 - 1.0
+    var z0 := -ROOM_D * 0.5 + 2.1        # sau lưng là quầy bếp, không chui vào
+    var z1 := ROOM_D * 0.5 - 1.25        # mép trước quán
+    return Rect2(-hw, z0, hw * 2.0, z1 - z0)
 
 
 ## Chó: đi tới một chỗ, đứng hít hà một lát, rồi lại chọn chỗ khác.
 func _update_dog(a: Dictionary, node: Node3D, rig: Dictionary, t: float, delta: float) -> void:
     a["t"] = float(a["t"]) + delta
+    # Chốt cứng: dù có chuyện gì thì con chó cũng không ra khỏi lòng quán. Khách
+    # đi ngang, bàn ghế dời chỗ hay khung hình giật đều không đẩy nó ra được.
+    var pen := _dog_bounds().grow(0.15)
+    node.position.x = clampf(node.position.x, pen.position.x, pen.end.x)
+    node.position.z = clampf(node.position.z, pen.position.y, pen.end.y)
+    node.position.y = 0.0
     match str(a["state"]):
         "walk":
             ComTamChars.dog_walk(rig, t, 7.0)
@@ -1615,6 +1630,10 @@ func _update_customer(a: Dictionary, node: Node3D, rig: Dictionary, t: float, de
             (meal["bowl"] as Node3D).visible = not chatty
             (meal["sticks"] as Node3D).visible = not chatty
             if float(a["t"]) > 11.0:
+                # ăn xong, no nê ra về: quán được tiếng thơm
+                var gained := GameManager.customer_finished()
+                spawn_float("+%d uy tín" % gained,
+                    node.global_position + Vector3(0, 1.9, 0), C_OK)
                 _set_meter(a.get("meter"), 0.0, false)
                 ComTamChars.stand_up(rig)
                 (meal["bowl"] as Node3D).visible = false

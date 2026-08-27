@@ -13,6 +13,9 @@ signal bubble_changed(station_id: String)
 signal day_ended(summary: Dictionary)
 signal offline_earned(data: Dictionary)   # thu nhập khi vắng mặt
 signal missions_changed
+## Uy tín thay đổi. Tách khỏi `state_changed` là có lý do: `state_changed` khiến
+## TycoonWorld DỰNG LẠI toàn bộ quán, mà khách bỏ về thì xảy ra liên tục.
+signal reputation_changed
 ## Xong một mẻ nướng: sân khấu 3D cho người đứng lò bưng thịt vào trong quán.
 signal grill_batch_ready(count: int)
 
@@ -455,6 +458,22 @@ const ANGER_SPIKE_CHANCE := 0.2
 const ANGER_MAX := 5
 
 
+## Khách ĂN XONG rồi vui vẻ đứng dậy ra về: quán được thêm 1-2 điểm uy tín.
+## Tính lúc ăn xong chứ không tính lúc mới bưng ra: bưng ra mà người ta chưa ăn
+## thì đã tốt đẹp gì đâu. Không có phần thưởng này thì cơ chế bỏ về chỉ có một
+## chiều đi xuống, uy tín nằm bẹp ở 0.
+const HAPPY_REWARD_MIN := 1
+const HAPPY_REWARD_MAX := 2
+
+
+## Trả về số uy tín vừa được cộng.
+func customer_finished() -> int:
+    var gain := randi_range(HAPPY_REWARD_MIN, HAPPY_REWARD_MAX)
+    reputation = minf(100.0, reputation + float(gain))
+    reputation_changed.emit()
+    return gain
+
+
 ## Một người khách bỏ về vì chờ lâu. Trả về số uy tín vừa mất.
 func customer_gave_up(kind: String) -> int:
     var penalty := int(CUSTOMER_ANGER.get(kind, 2))
@@ -464,7 +483,9 @@ func customer_gave_up(kind: String) -> int:
     reputation = maxf(0.0, reputation - float(penalty))
     lost_today += 1
     _log("Khách bỏ về vì chờ lâu · uy tín -%d" % penalty)
-    state_changed.emit()
+    # KHÔNG dùng state_changed ở đây: nó dựng lại cả quán, khách đang ngồi bị xoá
+    # sạch và người phục vụ mất luôn đĩa đang bưng.
+    reputation_changed.emit()
     return penalty
 
 
