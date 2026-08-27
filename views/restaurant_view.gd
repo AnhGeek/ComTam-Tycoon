@@ -1,5 +1,5 @@
 extends Control
-## Màn hình quán: khung 3D cắt lớp + HUD + chọn tầng + thẻ thông tin quầy.
+## Màn hình quán: khung 3D nhìn từ trên xuống + HUD + chọn khu + thẻ thông tin quầy.
 
 var world: TycoonWorld
 var sub_vp: SubViewport
@@ -236,7 +236,7 @@ func _build_overlay() -> Control:
 	warn_panel.visible = false
 	overlay.add_child(warn_panel)
 
-	# chọn tầng (bên phải)
+	# chọn khu (bên phải)
 	var floor_col := VBoxContainer.new()
 	floor_col.set_anchors_preset(Control.PRESET_CENTER_RIGHT)
 	floor_col.offset_left = -74
@@ -248,7 +248,7 @@ func _build_overlay() -> Control:
 	floor_btns.clear()
 	for i in range(GameManager.FLOORS.size() - 1, -1, -1):
 		var f: Dictionary = GameManager.FLOORS[i]
-		var b := UIKit.button_secondary("T%d" % (i + 1), 13)
+		var b := UIKit.button_secondary("K%d" % (i + 1), 13)
 		b.custom_minimum_size = Vector2(99, 68)
 		b.pressed.connect(_on_floor_button.bind(i))
 		b.set_meta("floor", i)
@@ -339,7 +339,7 @@ func _build_dock() -> Control:
 
 	panel.custom_minimum_size = Vector2(372, 0)
 
-	# cột quầy của tầng đang xem: xem cấp, tiến độ và nâng cấp bằng một chạm
+	# cột quầy của khu đang xem: xem cấp, tiến độ và nâng cấp bằng một chạm
 	var strip_scroll := ScrollContainer.new()
 	strip_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	strip_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -365,7 +365,7 @@ func _build_dock() -> Control:
 	furni_btn.pressed.connect(_show_furniture_card)
 	row.add_child(furni_btn)
 
-	var hint := UIKit.label("Chạm quầy · vuốt một ngón đổi tầng · hai ngón để kéo và thu phóng", 9, UIKit.N600)
+	var hint := UIKit.label("Chạm quầy · vuốt ngang đổi khu · hai ngón để kéo và thu phóng", 9, UIKit.N600)
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	v.add_child(hint)
@@ -429,13 +429,13 @@ func _refresh_floor_buttons() -> void:
 		var active := world != null and world.current_floor() == i
 		if not unlocked:
 			UIKit._style_button(b, UIKit.BG, UIKit.N600, UIKit.ACCENT if active else UIKit.N400, 2 if active else 1)
-			b.text = "T%d 🔒" % (i + 1)
+			b.text = "K%d 🔒" % (i + 1)
 		elif active:
 			UIKit._style_button(b, UIKit.ACCENT_900, UIKit.BG, UIKit.ACCENT_900, 0)
-			b.text = "T%d" % (i + 1)
+			b.text = "K%d" % (i + 1)
 		else:
 			UIKit._style_button(b, UIKit.BG, UIKit.ACCENT_800, UIKit.ACCENT, 1)
-			b.text = "T%d" % (i + 1)
+			b.text = "K%d" % (i + 1)
 
 
 func _on_focus_changed(_index: int) -> void:
@@ -471,7 +471,7 @@ func _toast(msg: String) -> void:
 	toast_label.get_parent().visible = true
 
 
-# ================= Dải quầy của tầng đang xem =================
+# ================= Dải quầy của khu đang xem =================
 
 func _rebuild_strip() -> void:
 	if strip_box == null or world == null:
@@ -483,7 +483,7 @@ func _rebuild_strip() -> void:
 
 	var fid := str(GameManager.FLOORS[strip_floor]["id"])
 	if not GameManager.is_floor_unlocked(fid):
-		var note := UIKit.muted("Tầng này chưa mở — chạm vào bảng trong quán để mở khoá.", 12)
+		var note := UIKit.muted("Khu này chưa mở — chạm vào bảng ngoài lô đất để mở khoá.", 12)
 		note.custom_minimum_size = Vector2(0, 0)
 		note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		strip_box.add_child(note)
@@ -696,7 +696,7 @@ func _on_furniture_tapped(index: int) -> void:
 	var d: Dictionary = GameManager.FURNITURE.get(kind, {})
 	var v := _card_shell()
 	v.add_child(UIKit.heading(str(d.get("name", "Bàn")), 18))
-	v.add_child(UIKit.muted("Đang kê %s, tầng %d." % [
+	v.add_child(UIKit.muted("Đang kê %s, khu %d." % [
 		"ngoài vỉa hè" if str(it.get("zone", "in")) == "out" else "trong quán",
 		int(it.get("floor", 0)) + 1], 11))
 	v.add_child(UIKit.separator())
@@ -739,7 +739,7 @@ func _clear_card() -> void:
 	for c in card_layer.get_children():
 		c.queue_free()
 	# Trả lớp thẻ về trong suốt với ngón tay, nếu không nó nuốt hết cú chạm vào
-	# sân khấu 3D (không mở được tầng, không kê được bàn) dù thẻ đã đóng.
+	# sân khấu 3D (không mở được khu, không kê được bàn) dù thẻ đã đóng.
 	card_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 
@@ -889,7 +889,7 @@ func _show_floor_card(fid: String) -> void:
 	v.add_child(UIKit.muted("Thêm 4 chỗ ngồi và +5 uy tín.", 12))
 
 	var cost := float(f["cost"])
-	var buy := UIKit.button_primary("MỞ TẦNG · " + UIKit.money(cost) + " ₫", 14)
+	var buy := UIKit.button_primary("MỞ KHU · " + UIKit.money(cost) + " ₫", 14)
 	buy.custom_minimum_size = Vector2(0, 78)
 	buy.disabled = not GameManager.can_afford(cost)
 	buy.pressed.connect(func():

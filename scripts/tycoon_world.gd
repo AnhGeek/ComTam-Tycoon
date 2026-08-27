@@ -13,44 +13,48 @@ signal furniture_tapped(index: int)
 signal placement_changed(valid: bool, zone: String)
 
 # ---------- Kích thước không gian ----------
-## Trần cao là có chủ đích. Màn hình điện thoại rất cao và hẹp: muốn thấy đủ bề
-## ngang của quán thì khung nhìn buộc phải cao theo. Trần thấp -> lọt luôn tầng
-## trên vào khung hình. Trần cao thì tầng đang xem chiếm gần hết màn hình.
-const FLOOR_H := 7.4
-# Cầu thang hai vế gấp khúc nép sát tường trái, tránh xa quầy bếp ở tường sau.
-const STAIR_XA := -3.2             # tim vế 1 (sát tường trái)
-const STAIR_XB := -2.1             # tim vế 2 (vế quay lại)
-const STAIR_W := 0.95
-const STAIR_Z_LOW := ROOM_D * 0.5 - 0.25     # chân thang, phía trước quán
-const STAIR_Z_HIGH := -0.4                   # chiếu nghỉ, vẫn chừa lối trước quầy bếp
-const STAIR_STEPS := 9
+## Quán chỉ có MỘT TẦNG TRỆT. Các "tầng" trong GameManager giờ là các KHU nằm
+## cạnh nhau trên cùng mặt đất, nhìn từ trên xuống kiểu idle tycoon: không mái,
+## không tầng lầu, chỉ hai bức tường xa để thấy hết lòng quán.
+const FLOOR_H := 3.3               # chiều cao tường (đủ thấp để nhìn chéo xuống không bị che)
+
+## Mỗi khu là một gian nhà nối liền, cách nhau đúng bề dày tường chung.
+const WING_GAP := 0.5
+const WING_DX := ROOM_W + WING_GAP
 
 # Lò than vỉa hè: đặt nép mé trong, chừa nguyên khoảng vỉa hè cho khách kê bàn.
 const GRILL_POS := Vector3(-3.25, 0.0, ROOM_D * 0.5 + 0.95)
 const GRILL_MEATS := 6             # số miếng thịt bày trên vỉ cho vui mắt
 
-const MAX_CUSTOMERS := 12          # trần số khách mỗi tầng, giữ cho điện thoại yếu chạy mượt
-const ACTOR_LOD_RANGE := 1.5       # tầng cách tầm nhìn quá xa thì thôi tính hoạt hình
+const MAX_CUSTOMERS := 12          # trần số khách mỗi khu, giữ cho điện thoại yếu chạy mượt
+const ACTOR_LOD_RANGE := 1.5       # khu cách tầm nhìn quá xa thì thôi tính hoạt hình
 const ROOM_W := 7.6
 const ROOM_D := 5.2
 const SLAB := 0.3
 
-const CAM_FOV := 34.0
-const CAM_PITCH := -17.0
-const YAW_HOME := -0.32
+## Góc nhìn chúc xuống hẳn: thấy trọn mặt sàn, tường thấp không úp lên bàn ghế.
+## Góc mở hẹp + camera lùi thật xa = gần như phối cảnh trục đo: bàn ghế ở mép
+## dưới khung không còn phình to gấp đôi bàn ghế trong quán nữa.
+const CAM_FOV := 20.0
+const CAM_PITCH := -42.0
+## Nhìn từ phía trước BÊN PHẢI: hai bức tường (sau + trái) đều nằm ở phía xa nên
+## không bức nào úp lên lòng quán, đúng kiểu nhà cắt góc của game idle tycoon.
+const YAW_HOME := 0.32
 const YAW_RANGE := 0.26
-const VIEW_MIN_FLOORS := 1.15
-const VIEW_MAX_FLOORS := 3.4
+## Khung nhìn tính theo BỀ NGANG một khu chứ không theo chiều cao tầng nữa:
+## sát nhất là vừa một bộ bàn, xa nhất là thấy cả dãy nhà lẫn lòng đường.
+const VIEW_MIN_H := 4.0
+const VIEW_MAX_H := 30.0
 
 ## Thu phóng: người chơi chụm/xoè hai ngón (hoặc bấm +/-) để kéo khung nhìn ra
 ## tận vỉa hè. 1.0 = khung mặc định vừa đúng bề ngang quán.
 const ZOOM_MIN := 0.62
-const ZOOM_MAX := 2.10
+const ZOOM_MAX := 3.20
 const ZOOM_HOME := 1.0
 
 ## Kéo hai ngón để dời khung nhìn (xem dãy bàn ngoài đường chẳng hạn).
-const PAN_LIMIT_X := 7.0
-const PAN_LIMIT_Y := 8.0
+const PAN_LIMIT_X := 9.0
+const PAN_LIMIT_Y := 7.0
 
 # ---------- Vỉa hè trước quán ----------
 ## Mặt đường thấp hơn nền quán 40cm (có bậc thềm), bàn ngoài đặt ở cao độ này.
@@ -249,11 +253,16 @@ func _fit_distance() -> float:
     var vp := get_viewport()
     var vsize: Vector2 = vp.get_visible_rect().size if vp != null else Vector2(720, 900)
     var aspect := clampf(vsize.x / maxf(vsize.y, 1.0), 0.4, 2.2)
-    var extent := ROOM_W * absf(cos(yaw)) + ROOM_D * absf(sin(yaw))
-    # Khung mặc định phải ôm cả bề ngang quán LẪN dải vỉa hè phía trước. Vỉa hè
-    # nằm gần camera hơn nên nở to trong khung, vì vậy phải lấy dư chiều cao.
-    _base_height = maxf(extent / aspect * 0.95, FLOOR_H * 1.2)
-    _view_height = clampf(_base_height * zoom, VIEW_MIN_FLOORS * FLOOR_H, VIEW_MAX_FLOORS * FLOOR_H)
+    # Khung mặc định phải ôm trọn một khu: từ tường sau ra tới mép vỉa hè. Nhìn
+    # chúc xuống nên chiều sâu mặt đất ăn vào chiều DỌC khung hình theo sin(góc
+    # chúc), còn tường thì ăn thêm một đoạn theo cos.
+    var pitch := deg_to_rad(-CAM_PITCH)
+    var fw := ROOM_W + 1.4                       # bề ngang gian nhà + lề hai bên
+    var fd := OUT_Z1 + 0.8 + ROOM_D * 0.5        # tường sau -> mép vỉa hè
+    var horiz := fw * absf(cos(yaw)) + fd * absf(sin(yaw))
+    var vert := (fw * absf(sin(yaw)) + fd * absf(cos(yaw))) * sin(pitch) + FLOOR_H * cos(pitch)
+    _base_height = maxf(vert, horiz / aspect)
+    _view_height = clampf(_base_height * zoom, VIEW_MIN_H, VIEW_MAX_H)
     return (_view_height * 0.5) / tan(deg_to_rad(CAM_FOV) * 0.5)
 
 
@@ -261,16 +270,21 @@ func _update_camera() -> void:
     var d := _fit_distance()
     var pitch := deg_to_rad(-CAM_PITCH)
     camera.position = Vector3(0, sin(pitch) * d, cos(pitch) * d)
-    # Tầng trệt có vỉa hè ở phía trước nên hạ tâm nhìn xuống và đẩy ra ngoài
-    # đường; càng kéo xa càng thấy nhiều mặt tiền + hàng bàn ngoài trời.
-    var street_bias := clampf(1.0 - focus, 0.0, 1.0)
-    var zoom_out := clampf(_view_height / maxf(_base_height, 0.01) - 1.0, 0.0, 1.3)
-    var y := focus * FLOOR_H + FLOOR_H * 0.44 - street_bias * (1.25 + zoom_out * 1.5)
-    var z := 0.2 + street_bias * (0.75 + zoom_out * 1.5)
+    # Tâm nhìn nằm ngay trên mặt sàn của KHU đang xem: đổi khu là trượt ngang,
+    # không còn leo lên leo xuống theo tầng nữa.
+    var zoom_out := clampf(_view_height / maxf(_base_height, 0.01) - 1.0, 0.0, 1.6)
+    var y := 0.7
+    # tâm nhìn đặt giữa lòng quán và mép vỉa hè; kéo xa thì lùi thêm ra đường
+    var z := 2.5 + zoom_out * 1.5
     # pan.x chạy dọc trục ngang của camera nên kéo tay sang đâu, cảnh trôi theo đó
     var right := Vector3(cos(yaw), 0.0, -sin(yaw))
-    cam_pivot.position = Vector3(0, y + pan.y, z) + right * pan.x
+    cam_pivot.position = Vector3(wing_x(focus), y + pan.y, z) + right * pan.x
     cam_pivot.rotation.y = yaw
+
+
+## Tâm của khu thứ `index` trên trục ngang (nhận cả số lẻ để trượt mượt giữa hai khu).
+func wing_x(index: float) -> float:
+    return (index - float(GameManager.FLOORS.size() - 1) * 0.5) * WING_DX
 
 
 ## Thu phóng quanh mức mặc định. `mult` > 1 là kéo ra xa.
@@ -306,23 +320,33 @@ func _build_street() -> void:
     s.position = Vector3(0, -0.4, 0)
     add_child(s)
     var hd := ROOM_D * 0.5
-    _box(s, 30, 0.2, 7.4, C_WALK, 0, -0.1, hd + 3.0)
-    _box(s, 30, 0.14, 10.0, C_ROAD, 0, -0.2, hd + 11.6)
-    _box(s, 30, 0.1, 0.22, Color8(0xb9, 0xc0, 0xcf), 0, -0.05, hd + 6.6)   # mép bó vỉa
-    for i in 8:
-        _box(s, 1.1, 0.02, 0.16, Color8(0xe6, 0xea, 0xee), -14 + i * 3.6, -0.12, hd + 11.0)
+    # Cả dãy nhà nằm trên một mặt đất duy nhất nên nền phố phải dài hơn dãy nhà.
+    var span := float(GameManager.FLOORS.size()) * WING_DX + 18.0
+    var half := span * 0.5
+    # thảm cỏ chạy vòng phía sau: nhìn từ trên xuống là thấy hết đất sau lưng quán
+    _box(s, span, 0.16, 26.0, C_PLANT, 0, -0.12, -hd - 13.6, 0.95)
+    _box(s, span, 0.2, 7.4, C_WALK, 0, -0.1, hd + 3.0)
+    _box(s, span, 0.14, 10.0, C_ROAD, 0, -0.2, hd + 11.6)
+    _box(s, span, 0.1, 0.22, Color8(0xb9, 0xc0, 0xcf), 0, -0.05, hd + 6.6)   # mép bó vỉa
+    for i in int(span / 3.6):
+        _box(s, 1.1, 0.02, 0.16, Color8(0xe6, 0xea, 0xee), -half + 1.8 + i * 3.6, -0.12, hd + 11.0)
     # xe máy dựng nép hai bên cho khoảng giữa vỉa hè trống chỗ kê bàn
-    for bx in [-6.6, -5.2, 6.0, 7.4]:
+    for bx in [-half + 3.4, -half + 4.8, half - 4.8, half - 3.4]:
         _box(s, 0.42, 0.32, 1.2, C_STEEL_DARK, bx, 0.2, hd + 5.6)
         _cylinder(s, 0.23, 0.23, 0.1, Color8(0x3a, 0x3e, 0x42), bx, 0.14, hd + 5.12, 12).rotation_degrees = Vector3(0, 0, 90)
         _cylinder(s, 0.23, 0.23, 0.1, Color8(0x3a, 0x3e, 0x42), bx, 0.14, hd + 6.08, 12).rotation_degrees = Vector3(0, 0, 90)
         _box(s, 0.1, 0.4, 0.15, C_STEEL_LIGHT, bx, 0.52, hd + 5.2)
-    for tx in [-8.2, 8.4]:
+    for tx in [-half + 1.4, half - 1.4]:
         _cylinder(s, 0.16, 0.2, 1.5, Color8(0x7a, 0x6a, 0x5c), tx, 0.75, hd + 3.0, 8)
         _cylinder(s, 0.1, 1.0, 1.5, C_PLANT, tx, 2.1, hd + 3.0, 8)
+    # bụi cây sau lưng quán cho khoảng đất trống đỡ trơ
+    for i in int(span / 4.2):
+        var bx2 := -half + 2.4 + float(i) * 4.2
+        _cylinder(s, 0.9, 1.0, 0.7, Color8(0x35, 0xa8, 0x66), bx2, 0.35, -hd - 2.6, 10)
+        _cylinder(s, 0.55, 0.62, 0.5, C_PLANT, bx2 + 0.8, 0.25, -hd - 3.4, 10)
     # hàng rào sắt & nhà bên kia đường cho có chiều sâu phố
-    for i in 10:
-        _box(s, 0.08, 1.1, 0.08, Color8(0x5c, 0x6b, 0x54), -14 + i * 3.1, 0.55, hd + 6.9)
+    for i in int(span / 3.1):
+        _box(s, 0.08, 1.1, 0.08, Color8(0x5c, 0x6b, 0x54), -half + 1.0 + i * 3.1, 0.55, hd + 6.9)
 
 
 # ================= Dựng các tầng =================
@@ -344,8 +368,8 @@ func rebuild() -> void:
         var f: Dictionary = GameManager.FLOORS[i]
         var fid := str(f["id"])
         var node := Node3D.new()
-        node.name = "Floor_" + fid
-        node.position = Vector3(0, i * FLOOR_H, 0)
+        node.name = "Wing_" + fid
+        node.position = Vector3(wing_x(float(i)), 0, 0)
         add_child(node)
         _floor_nodes[fid] = node
         if GameManager.is_floor_unlocked(fid):
@@ -364,16 +388,10 @@ func _build_floor(node: Node3D, fid: String, index: int) -> void:
     var hd := ROOM_D * 0.5
     var accent: Color = FLOOR_ACCENTS[index % FLOOR_ACCENTS.size()]
     _blockers[index] = []
-    if index < GameManager.FLOORS.size() - 1:
-        # cả khoảng cầu thang chiếm chỗ, kê bàn vào đó là chặn lối lên tầng
-        (_blockers[index] as Array).append({
-            "pos": Vector2((STAIR_XA + STAIR_XB) * 0.5, (STAIR_Z_LOW + STAIR_Z_HIGH) * 0.5),
-            "half": Vector2((STAIR_XB - STAIR_XA + STAIR_W) * 0.5 + 0.08,
-                (STAIR_Z_LOW - STAIR_Z_HIGH) * 0.5 + 0.25)})
-    if index == 0:
-        (_blockers[index] as Array).append({"pos": Vector2(hw - 0.5, hd - 0.9), "r": 0.95})    # lối vào
+    # mỗi khu có cửa riêng ra vỉa hè: chừa lối vào, đừng kê bàn chắn ngang
+    (_blockers[index] as Array).append({"pos": Vector2(hw - 0.5, hd - 0.9), "r": 0.95})
 
-    # sàn + gờ sàn màu nhận diện tầng
+    # sàn + gờ sàn màu nhận diện khu
     _box(node, ROOM_W, SLAB, ROOM_D, C_FLOOR, 0, -SLAB * 0.5, 0, 0.8)
     _box(node, ROOM_W + 0.26, 0.14, ROOM_D + 0.26, accent, 0, -SLAB - 0.07, 0, 0.5)
     var line_mat := ComTamChars.mat(C_FLOOR_LINE, 0.85)
@@ -382,45 +400,49 @@ func _build_floor(node: Node3D, fid: String, index: int) -> void:
     for gz in range(1, int(ROOM_D)):
         _box(node, ROOM_W - 0.3, 0.014, 0.025, C_FLOOR_LINE, 0, 0.009, -hd + gz).material_override = line_mat
 
-    # hai tường xa (cắt lớp: bỏ tường trước và trần)
-    _box(node, ROOM_W, FLOOR_H - SLAB, 0.16, C_WALL, 0, (FLOOR_H - SLAB) * 0.5, -hd, 0.9)
-    _box(node, 0.16, FLOOR_H - SLAB, ROOM_D, C_WALL_DEEP, -hw, (FLOOR_H - SLAB) * 0.5, 0, 0.9)
+    # Nhà trệt không mái: chỉ dựng tường sau và tường trái, hai mặt còn lại để
+    # trống hẳn cho góc nhìn chúc xuống thấy trọn lòng quán.
+    var wall_h := FLOOR_H - SLAB
+    _box(node, ROOM_W, wall_h, 0.16, C_WALL, 0, wall_h * 0.5, -hd, 0.9)
+    _box(node, 0.16, wall_h, ROOM_D, C_WALL_DEEP, -hw, wall_h * 0.5, 0, 0.9)
+    # gờ mép tường (thay cho diềm mái): viền màu chạy trên đầu hai bức tường
+    _box(node, ROOM_W + 0.3, 0.16, 0.34, accent, 0, wall_h + 0.05, -hd, 0.5)
+    _box(node, 0.34, 0.16, ROOM_D + 0.3, accent, -hw, wall_h + 0.05, 0, 0.5)
     _box(node, ROOM_W, 0.16, 0.07, accent, 0, 0.08, -hd + 0.1, 0.5)
     _box(node, 0.07, 0.16, ROOM_D, accent, -hw + 0.1, 0.08, 0, 0.5)
 
-    # bảng hiệu tầng treo cao trên tường sau (trần cao nên còn nhiều chỗ trống)
+    # bảng tên khu gắn trên tường sau, ngay dưới mép tường
     var f := GameManager.floor_data(fid)
-    _box(node, ROOM_W - 1.6, 0.9, 0.1, C_STEEL_DARK, 0, 5.0, -hd + 0.13, 0.4)
-    _label3d(node, str(f["name"]).to_upper(), 44, Color8(0xf6, 0xf8, 0xfc), 0, 5.15, -hd + 0.2, false)
-    _label3d(node, "TẦNG %d" % (index + 1), 30, accent, 0, 4.7, -hd + 0.2, false)
+    _box(node, ROOM_W - 1.6, 0.78, 0.1, C_STEEL_DARK, 0, wall_h - 0.62, -hd + 0.13, 0.4)
+    _label3d(node, str(f["name"]).to_upper(), 40, Color8(0xf6, 0xf8, 0xfc),
+        0, wall_h - 0.5, -hd + 0.2, false)
+    _label3d(node, "KHU %d" % (index + 1), 26, accent, 0, wall_h - 0.9, -hd + 0.2, false)
 
-    # đèn thả trần
+    # đèn thả: treo trên thanh xà ngang vì không còn trần để móc
+    var beam_y := wall_h - 0.12
+    _box(node, ROOM_W, 0.1, 0.1, C_STEEL_LIGHT, 0, beam_y, 0.4, 0.6)
     for lx in [-2.3, 0.0, 2.3]:
-        _cylinder(node, 0.02, 0.02, 0.9, C_STEEL_DARK, lx, FLOOR_H - 0.75, 0.4, 6)
-        _cylinder(node, 0.32, 0.16, 0.26, accent, lx, FLOOR_H - 1.3, 0.4, 12)
+        _cylinder(node, 0.02, 0.02, 0.5, C_STEEL_DARK, lx, beam_y - 0.3, 0.4, 6)
+        _cylinder(node, 0.32, 0.16, 0.26, accent, lx, beam_y - 0.63, 0.4, 12)
 
     # quầy bếp dọc tường sau
     _box(node, ROOM_W - 0.5, 0.95, 1.0, C_WOOD, 0, 0.48, -hd + 1.15)
     _box(node, ROOM_W - 0.5, 0.16, 1.02, accent, 0, 0.9, -hd + 1.15, 0.5)
     _box(node, ROOM_W - 0.3, 0.1, 1.16, C_WALL, 0, 1.02, -hd + 1.15, 0.55)
 
-    if index == 0:
-        _box(node, 0.18, 2.4, 1.5, C_STEEL_LIGHT, hw - 0.09, 1.2, hd - 0.9, 0.4)
-        _label3d(node, "LỐI VÀO", 26, accent, hw - 0.32, 2.85, hd - 0.9)
-        _build_terrace(node, accent)
-    if index < GameManager.FLOORS.size() - 1:
-        _build_stairs(node, accent)
+    # khung cửa mở ra vỉa hè: khu nào cũng có, vì khu nào cũng nằm mặt tiền
+    _box(node, 0.18, wall_h * 0.72, 1.5, C_STEEL_LIGHT, hw - 0.09, wall_h * 0.36, hd - 0.9, 0.4)
+    _label3d(node, "LỐI VÀO", 22, accent, hw - 0.32, wall_h * 0.72 + 0.3, hd - 0.9)
+    # vỉa hè trước quán chạy suốt cả dãy; riêng khu trệt mới có lò than + bảng hiệu
+    _build_terrace(node, accent, index == 0)
 
     # quầy hàng
     var sids := GameManager.stations_on_floor(fid)
     for i in sids.size():
         _build_station(node, str(sids[i]), _station_slot(i), index)
 
-    # bàn ăn có sẵn của quán
-    # tầng nào có cầu thang thì nửa trái đã kín, chỉ kê sẵn một bàn bên phải
-    var spots: Array = [Vector2(2.6, 0.3)]
-    if index == GameManager.FLOORS.size() - 1:
-        spots = [Vector2(-2.2, 0.3), Vector2(2.6, 0.3)]
+    # bàn ăn có sẵn của quán: nhà trệt không còn cầu thang nên kê được cả hai bên
+    var spots: Array = [Vector2(-2.2, 0.5), Vector2(2.6, 0.5)]
     _tables[index] = []
     for i in spots.size():
         _build_table(node, spots[i], index)
@@ -706,82 +728,9 @@ func _on_grill_batch(count: int) -> void:
         spawn_float("+%d miếng" % count, (g as Node3D).global_position + Vector3(0, 2.0, 0), C_HOT)
 
 
-# ---------- Cầu thang lên tầng trên ----------
-
-## Một vế thang đặc: mặt bậc + cổ bậc chồng lên nhau, hai dầm biên xiên đỡ bên dưới
-## và một tay vịn chạy dọc, nhìn ra đúng cái cầu thang chứ không phải mấy tấm ván bay.
-func _build_flight(node: Node3D, x: float, z_from: float, z_to: float,
-        y_from: float, y_to: float, accent: Color, rail_side: float) -> void:
-    var run := z_to - z_from
-    var rise := y_to - y_from
-    var tread := run / float(STAIR_STEPS)
-    var riser := rise / float(STAIR_STEPS)
-    for i in STAIR_STEPS:
-        var zc := z_from + tread * (float(i) + 0.5)
-        var yt := y_from + riser * float(i + 1)
-        _box(node, STAIR_W, 0.08, absf(tread) + 0.03, C_STEEL_LIGHT, x, yt - 0.04, zc, 0.55)
-        _box(node, STAIR_W - 0.06, absf(riser), 0.06, C_WALL,
-            x, yt - absf(riser) * 0.5, zc + tread * 0.5, 0.8)
-
-    var span := Vector2(run, rise).length()
-    var tilt := atan2(rise, absf(run)) * (1.0 if run < 0.0 else -1.0)
-    for side in [-1.0, 1.0]:
-        var beam := _box(node, 0.1, 0.3, span, C_STEEL_DARK,
-            x + side * (STAIR_W * 0.5 + 0.05), (y_from + y_to) * 0.5 - 0.2,
-            (z_from + z_to) * 0.5, 0.6)
-        beam.rotation.x = tilt
-
-    # tay vịn: thanh xiên + mấy cột con, đặt ở phía không giáp tường
-    var rail := _box(node, 0.07, 0.07, span, accent,
-        x + rail_side * (STAIR_W * 0.5 + 0.05), (y_from + y_to) * 0.5 + 0.95,
-        (z_from + z_to) * 0.5, 0.5)
-    rail.rotation.x = tilt
-    for i in 3:
-        var k := (float(i) + 0.5) / 3.0
-        _box(node, 0.05, 1.0, 0.05, C_STEEL_DARK,
-            x + rail_side * (STAIR_W * 0.5 + 0.05), lerpf(y_from, y_to, k) + 0.45,
-            lerpf(z_from, z_to, k), 0.6)
-
-
-func _build_stairs(node: Node3D, accent: Color) -> void:
-    var half := FLOOR_H * 0.5
-    var land_z := STAIR_Z_HIGH
-    # vế 1: đi từ phía trước lùi vào trong, sát tường trái
-    _build_flight(node, STAIR_XA, STAIR_Z_LOW, land_z + 0.45, 0.0, half, accent, 1.0)
-    # chiếu nghỉ giữa hai vế
-    var mid_x := (STAIR_XA + STAIR_XB) * 0.5
-    var land_w := STAIR_XB - STAIR_XA + STAIR_W
-    _box(node, land_w, 0.1, 0.95, C_STEEL_LIGHT, mid_x, half - 0.05, land_z, 0.55)
-    _box(node, land_w, 0.34, 0.12, C_STEEL_DARK, mid_x, half - 0.3, land_z - 0.47, 0.6)
-    _box(node, land_w, 0.07, 0.07, accent, mid_x, half + 0.95, land_z - 0.47, 0.5)
-    _box(node, 0.05, 1.0, 0.05, C_STEEL_DARK, mid_x, half + 0.45, land_z - 0.47, 0.6)
-    # cột chống cho chiếu nghỉ đứng được trên sàn
-    for cx in [STAIR_XA, STAIR_XB]:
-        _box(node, 0.12, half, 0.12, C_STEEL_DARK, cx, half * 0.5, land_z - 0.4, 0.6)
-    # vế 2: quay đầu, chạy ngược ra phía trước rồi lên sàn tầng trên
-    _build_flight(node, STAIR_XB, land_z + 0.45, STAIR_Z_LOW, half, FLOOR_H, accent, 1.0)
-
-
-## Các chặng leo cầu thang, tính theo toạ độ nội bộ của tầng ĐÍCH: chân thang nằm
-## ở tầng dưới nên cao độ là âm một tầng. `up` = false thì đi ngược lại để về.
-func _stair_path(up: bool) -> Array:
-    var dy := -FLOOR_H
-    var half := FLOOR_H * 0.5
-    var steps := [
-        Vector3(STAIR_XA, dy, STAIR_Z_LOW - 0.15),
-        Vector3(STAIR_XA, dy + half, STAIR_Z_HIGH + 0.3),
-        Vector3(STAIR_XB, dy + half, STAIR_Z_HIGH + 0.3),
-        Vector3(STAIR_XB, 0.0, STAIR_Z_LOW - 0.15),
-    ]
-    if up:
-        return steps
-    steps.reverse()
-    return steps
-
-
 # ---------- Vỉa hè trước quán: mái hiên, bậc thềm, tủ kính ----------
 
-func _build_terrace(node: Node3D, accent: Color) -> void:
+func _build_terrace(node: Node3D, accent: Color, with_grill: bool = true) -> void:
     var hw := ROOM_W * 0.5
     var hd := ROOM_D * 0.5
     var t := Node3D.new()
@@ -789,48 +738,53 @@ func _build_terrace(node: Node3D, accent: Color) -> void:
     t.position = Vector3(0, OUT_Y, 0)
     node.add_child(t)
 
-    # nền gạch vỉa hè + đường ron cho thấy rõ cao độ thấp hơn nền quán
-    _box(t, OUT_HW * 2.0 + 1.2, 0.08, OUT_Z1 - hd + 0.6, C_TILE, 0, 0.04, (OUT_Z1 + hd) * 0.5, 0.9)
+    # Nền gạch vỉa hè: đúng bằng một nhịp nhà, ghép lại thành dải liền suốt dãy
+    # (rộng hơn thì hai khu cạnh nhau chèn mặt lên nhau, nhìn loang lổ).
+    _box(t, WING_DX, 0.08, OUT_Z1 - hd + 0.6, C_TILE, 0, 0.04, (OUT_Z1 + hd) * 0.5, 0.9)
     var line_mat := ComTamChars.mat(C_FLOOR_LINE, 0.9)
-    for i in 9:
-        _box(t, 0.03, 0.02, OUT_Z1 - hd + 0.5, C_FLOOR_LINE, -4.4 + i * 1.1, 0.085,
+    for i in 8:
+        _box(t, 0.03, 0.02, OUT_Z1 - hd + 0.5, C_FLOOR_LINE,
+            -WING_DX * 0.5 + 0.5 + i * 1.1, 0.085,
             (OUT_Z1 + hd) * 0.5).material_override = line_mat
     for i in 4:
-        _box(t, OUT_HW * 2.0 + 1.0, 0.02, 0.03, C_FLOOR_LINE, 0, 0.085,
+        _box(t, WING_DX - 0.1, 0.02, 0.03, C_FLOOR_LINE, 0, 0.085,
             hd + 0.5 + i * 0.9).material_override = line_mat
 
-    _build_grill_stall(t, accent)
+    if with_grill:
+        _build_grill_stall(t, accent)
 
     # bậc thềm bước lên nền quán
     _box(t, ROOM_W + 1.0, 0.4, 0.55, C_WALL_DEEP, 0, 0.2, hd + 0.28, 0.85)
     _box(t, ROOM_W + 1.0, 0.06, 0.6, accent, 0, 0.42, hd + 0.28, 0.5)
 
-    # Mái hiên chỉ là tấm che hẹp ngay mặt tiền. Vươn dài ra vỉa hè thì nhìn từ
-    # trên xuống nó úp kín bàn ngoài trời, không thấy khách ngồi nữa.
+    # Mái hiên bây giờ chỉ là tấm che con con ngay trên khung cửa. Nhìn chúc từ
+    # trên xuống mà kéo dài hết mặt tiền thì nó úp kín cả lòng quán lẫn vỉa hè.
+    var aw_w := 2.8
     var aw := Node3D.new()
-    aw.position = Vector3(0, 6.25, hd + 0.1)
-    aw.rotation.x = -0.2
+    aw.position = Vector3(hw - 0.9, FLOOR_H - OUT_Y - 0.6, hd + 0.16)
+    aw.rotation.x = -0.34
     t.add_child(aw)
-    var strips := 12
+    var strips := 6
     for i in strips:
         var c: Color = C_AWNING if i % 2 == 0 else Color8(0xfa, 0xf6, 0xef)
-        _box(aw, (ROOM_W + 1.4) / float(strips), 0.08, 1.0, c,
-            -(ROOM_W + 1.4) * 0.5 + (float(i) + 0.5) * (ROOM_W + 1.4) / float(strips), 0, 0.5, 0.8)
-    _box(aw, ROOM_W + 1.5, 0.26, 0.08, C_AWNING, 0, -0.06, 1.0, 0.7)
+        _box(aw, aw_w / float(strips), 0.07, 0.62, c,
+            -aw_w * 0.5 + (float(i) + 0.5) * aw_w / float(strips), 0, 0.31, 0.8)
+    _box(aw, aw_w + 0.1, 0.2, 0.07, C_AWNING, 0, -0.05, 0.62, 0.7)
 
-    # Bảng hiệu dựng nép sang mép trái vỉa hè. Treo giữa mặt tiền thì nó che mất
-    # cả dãy quầy bên trong, vì mặt trước quán là mặt cắt để trống.
-    var sg := Node3D.new()
-    sg.position = Vector3(-hw - 0.75, 0, hd + 1.7)
-    sg.rotation.y = 0.34
-    t.add_child(sg)
-    _cylinder(sg, 0.06, 0.07, 2.6, C_STEEL_LIGHT, 0, 1.3, 0, 8)
-    _box(sg, 0.9, 2.2, 0.1, C_STEEL_DARK, 0, 2.9, 0, 0.4)
-    _box(sg, 0.98, 0.16, 0.14, C_GOLD, 0, 3.95, 0, 0.4)
-    _label3d(sg, "CƠM
-TẤM", 40, C_GOLD, 0, 3.35, 0.08, false)
-    _label3d(sg, "QUÁN
-VỈA HÈ", 20, Color8(0xdf, 0xe6, 0xff), 0, 2.3, 0.08, false)
+    # Bảng hiệu chỉ dựng một cái ở đầu dãy (khu trệt), nép mé trái vỉa hè. Dựng
+    # mỗi khu một cái thì cả dãy toàn cột, che mất lòng quán khi nhìn chúc xuống.
+    if with_grill:
+        var sg := Node3D.new()
+        sg.position = Vector3(-hw - 0.75, 0, hd + 1.7)
+        sg.rotation.y = 0.34
+        t.add_child(sg)
+        _cylinder(sg, 0.06, 0.07, 2.0, C_STEEL_LIGHT, 0, 1.0, 0, 8)
+        _box(sg, 0.9, 1.8, 0.1, C_STEEL_DARK, 0, 2.3, 0, 0.4)
+        _box(sg, 0.98, 0.16, 0.14, C_GOLD, 0, 3.18, 0, 0.4)
+        _label3d(sg, "CƠM
+TẤM", 40, C_GOLD, 0, 2.65, 0.08, false)
+        _label3d(sg, "QUÁN
+VỈA HÈ", 20, Color8(0xdf, 0xe6, 0xff), 0, 1.85, 0.08, false)
 
     # Tủ kính cũ đã bỏ: chỗ đó bây giờ là lò than, để lại thì nó úp kín cái lò.
     _cylinder(t, 0.34, 0.36, 0.5, C_STEEL_LIGHT, hw - 0.8, 0.33, hd + 0.95, 14)
@@ -981,9 +935,9 @@ func _build_decor(node: Node3D, index: int, accent: Color) -> void:
         _cylinder(node, 0.36, 0.36, 0.1, C_STEEL, -hw + 0.55, 1.55, -hd + 0.7, 14)
     var lanterns := mini(int(GameManager.decor.get("lantern", 0)), 4)
     for i in lanterns:
-        _cylinder(node, 0.14, 0.14, 0.34, Color8(0xc4, 0x6b, 0x4a), -1.7 + i * 1.15, FLOOR_H - 1.9, hd - 0.7, 10)
+        _cylinder(node, 0.14, 0.14, 0.34, Color8(0xc4, 0x6b, 0x4a), -1.7 + i * 1.15, FLOOR_H - 0.75, hd - 0.7, 10)
     if int(GameManager.decor.get("sign", 0)) > 0:
-        _box(node, 2.2, 0.4, 0.1, C_GOLD, 0, 3.3, -hd + 0.2, 0.35)
+        _box(node, 2.2, 0.4, 0.1, C_GOLD, 0, FLOOR_H - 1.55, -hd + 0.2, 0.35)
 
 
 # ---------- Quầy hàng ----------
@@ -1100,24 +1054,29 @@ func _build_locked_floor(node: Node3D, fid: String, f: Dictionary) -> void:
     var hd := ROOM_D * 0.5
     _box(node, ROOM_W, SLAB, ROOM_D, C_LOCK, 0, -SLAB * 0.5, 0, 0.9)
     _box(node, ROOM_W + 0.26, 0.14, ROOM_D + 0.26, C_HAZARD, 0, -SLAB - 0.07, 0, 0.5)
-    for i in 4:
-        _box(node, 0.1, FLOOR_H - 1.0, 0.1, C_HAZARD, -hw + 0.7 + i * 1.4, (FLOOR_H - 1.0) * 0.5, -hd + 0.6)
-    _box(node, ROOM_W - 1.2, 0.08, 0.08, C_HAZARD, 0, 1.6, -hd + 0.6)
-    _box(node, ROOM_W - 1.2, 0.08, 0.08, C_HAZARD, 0, 3.4, -hd + 0.6)
+    # Lô đất chưa xây: rào lưới quây quanh ba mặt cho thấy rõ đây là chỗ mở rộng.
+    var fence_h := 1.5
+    for i in 5:
+        _box(node, 0.1, fence_h, 0.1, C_HAZARD, -hw + 0.7 + i * 1.6, fence_h * 0.5, -hd + 0.4)
+    _box(node, ROOM_W - 0.8, 0.08, 0.08, C_HAZARD, 0, 0.65, -hd + 0.4)
+    _box(node, ROOM_W - 0.8, 0.08, 0.08, C_HAZARD, 0, 1.4, -hd + 0.4)
+    for sx in [-hw + 0.4, hw - 0.4]:
+        _box(node, 0.1, fence_h, 0.1, C_HAZARD, sx, fence_h * 0.5, 0.0)
+        _box(node, 0.08, 0.08, ROOM_D - 0.9, C_HAZARD, sx, 1.4, 0.0)
     _box(node, 0.8, 0.6, 0.7, C_WOOD, -1.9, 0.3, 0.8)
     _box(node, 0.7, 0.5, 0.6, C_STEEL, 1.7, 0.25, 0.4)
 
     var sign := Node3D.new()
-    sign.position = Vector3(0, 2.1, 0.6)
+    sign.position = Vector3(0, 1.5, 0.6)
     sign.rotation.y = -YAW_HOME
     node.add_child(sign)
     _box(sign, 3.2, 1.4, 0.1, C_STEEL_DARK, 0, 0, 0, 0.4)
     _label3d(sign, str(f["name"]).to_upper(), 36, Color8(0xf6, 0xf8, 0xfc), 0, 0.42, 0.09, false)
     _label3d(sign, UIKit.money_short(float(f["cost"])) + " ₫", 42, C_GOLD, 0, 0.0, 0.09, false)
-    _label3d(sign, "CHẠM ĐỂ MỞ TẦNG", 24, Color8(0xc2, 0xcd, 0xe8), 0, -0.4, 0.09, false)
+    _label3d(sign, "CHẠM ĐỂ MỞ KHU", 24, Color8(0xc2, 0xcd, 0xe8), 0, -0.4, 0.09, false)
 
     var area := Area3D.new()
-    area.position = Vector3(0, 2.1, 0.6)
+    area.position = Vector3(0, 1.5, 0.6)
     var shape := CollisionShape3D.new()
     var bs := BoxShape3D.new()
     bs.size = Vector3(4.0, 2.0, 1.6)
@@ -1299,8 +1258,9 @@ func _update_actors(delta: float) -> void:
         var node: Node3D = a["node"]
         if not is_instance_valid(node):
             continue
-        # quán đông người: tầng nào cách tầm nhìn quá xa thì khỏi tính hoạt hình
-        if absf(float(int(a["floor"])) - focus) > ACTOR_LOD_RANGE:
+        # quán đông người: khu nào cách tầm nhìn quá xa thì khỏi tính hoạt hình
+        # (kéo khung ra xa thì thấy nhiều khu hơn nên nới luôn tầm tính)
+        if absf(float(int(a["floor"])) - focus) > ACTOR_LOD_RANGE * maxf(1.0, zoom):
             continue
         var rig: Dictionary = a["rig"]
         var t: float = _time + float(a["phase"])
@@ -1395,43 +1355,35 @@ func _pick_table(floor_i: int):
     return list[randi() % list.size()]
 
 
-## Khách xuất hiện ở đâu: tầng trệt đi bộ dọc vỉa hè tới, tầng trên từ cầu thang.
-func _spawn_point(floor_i: int, slot: int) -> Vector3:
+## Khách xuất hiện ở đâu: khu nào cũng nằm mặt tiền nên ai cũng đi bộ dọc vỉa hè
+## tới cửa khu của mình (toạ độ tính trong hệ của khu, khỏi lo khu nằm đâu).
+func _spawn_point(_floor_i: int, slot: int) -> Vector3:
     var hd := ROOM_D * 0.5
-    if floor_i == 0:
-        var side := 1.0 if slot % 2 == 0 else -1.0
-        return Vector3(side * (OUT_HW + 2.2 + float(slot % 6) * 0.5), OUT_Y, hd + 4.6)
-    # khach tang tren buoc vao tu cua tang duoi roi leo cau thang len
-    return Vector3(ROOM_W * 0.5 - 0.6 + float(slot % 3) * 0.35, -FLOOR_H, hd - 0.5)
+    var side := 1.0 if slot % 2 == 0 else -1.0
+    return Vector3(side * (OUT_HW + 2.2 + float(slot % 6) * 0.5), OUT_Y, hd + 4.6)
 
 
-## Chỗ đứng chờ bàn: ngoài trệt thì đứng nép mé vỉa hè, tầng trên đứng trong quán.
-func _wait_point(floor_i: int, slot: int) -> Vector3:
+## Chỗ đứng chờ bàn: nép mé ngoài vỉa hè, đông thì xếp thành nhiều hàng để
+## không kéo dài mãi ra khỏi khung hình.
+func _wait_point(_floor_i: int, slot: int) -> Vector3:
     var hd := ROOM_D * 0.5
-    # đông khách thì xếp thành nhiều hàng, không kéo dài mãi ra khỏi khung hình
-    if floor_i == 0:
-        var col := slot % 5
-        var row := int(slot / 5.0)
-        return Vector3(-2.0 + float(col) * 1.0, OUT_Y, hd + 4.7 + float(row) * 0.9)
-    var col2 := slot % 4
-    var row2 := int(slot / 4.0)
-    return Vector3(2.3 - float(row2) * 0.6, 0.0, 0.1 + float(col2) * 0.55)
+    var col := slot % 5
+    var row := int(slot / 5.0)
+    return Vector3(-2.0 + float(col) * 1.0, OUT_Y, hd + 4.7 + float(row) * 0.9)
 
 
-## Lối ra: khách trệt đi bộ ra khỏi khung theo vỉa hè.
-func _exit_point(floor_i: int, slot: int) -> Vector3:
+## Lối ra: khách đi bộ ra khỏi khung theo vỉa hè.
+func _exit_point(_floor_i: int, slot: int) -> Vector3:
     var hd := ROOM_D * 0.5
-    if floor_i == 0:
-        var side := -1.0 if slot % 2 == 0 else 1.0
-        return Vector3(side * (OUT_HW + 3.0), OUT_Y, hd + 4.9 + float(slot % 3) * 0.7)
-    return Vector3(ROOM_W * 0.5 - 0.6 + float(slot % 3) * 0.35, -FLOOR_H, hd - 0.35)
+    var side := -1.0 if slot % 2 == 0 else 1.0
+    return Vector3(side * (OUT_HW + 3.0), OUT_Y, hd + 4.9 + float(slot % 3) * 0.7)
 
 
 ## Đường đi tới đích; nếu phải ra/vào quán thì chèn thêm chặng qua cửa.
-func _route(node_pos: Vector3, dest: Vector3, dest_out: bool, floor_i: int) -> Array:
+func _route(node_pos: Vector3, dest: Vector3, dest_out: bool, _floor_i: int) -> Array:
     var hd := ROOM_D * 0.5
     var outside_now := node_pos.z > hd
-    if floor_i != 0 or dest_out == outside_now:
+    if dest_out == outside_now:
         return [dest]
     var door_in := Vector3(ROOM_W * 0.5 - 1.0, 0.0, hd - 0.75)
     var door_out := Vector3(ROOM_W * 0.5 - 1.0, OUT_Y, hd + 1.0)
@@ -1486,16 +1438,12 @@ func _update_customer(a: Dictionary, node: Node3D, rig: Dictionary, t: float, de
     match str(a["state"]):
         "enter":
             if (a["path"] as Array).is_empty():
-                if floor_i > 0:
-                    a["path"] = _stair_path(true)
-                    (a["path"] as Array).append(_wait_point(floor_i, slot))
-                else:
-                    a["path"] = _route(node.position, _wait_point(floor_i, slot), true, floor_i)
+                a["path"] = _route(node.position, _wait_point(floor_i, slot), true, floor_i)
             if _follow_path(a, node, rig, t, delta, 1.3):
                 a["state"] = "queue"
                 a["t"] = 0.0
         "queue":
-            node.rotation.y = PI * 0.9 if floor_i > 0 else 0.35
+            node.rotation.y = 0.35
             ComTamChars.idle(rig, t)
             if float(a["t"]) > 1.5 + float(slot) * 0.8:
                 var seat = _take_seat(floor_i)
@@ -1511,6 +1459,8 @@ func _update_customer(a: Dictionary, node: Node3D, rig: Dictionary, t: float, de
                 var seat2: Dictionary = a["seat"]
                 var look: Vector3 = seat2["look"]
                 node.rotation.y = atan2(look.x - node.position.x, look.z - node.position.z)
+                # người đã thu nhỏ nên phải kênh lên cho mông chạm đúng mặt ghế
+                a["y"] = float(seat2["y"]) + ComTamChars.seat_lift(str(seat2.get("style", "chair")))
         "eat":
             var seat3: Dictionary = a["seat"]
             var chatty := bool(a["chatty"])
@@ -1527,11 +1477,7 @@ func _update_customer(a: Dictionary, node: Node3D, rig: Dictionary, t: float, de
                 (meal["sticks"] as Node3D).visible = false
                 seat3["taken"] = false
                 a["seat"] = null
-                if floor_i > 0:
-                    a["path"] = _stair_path(false)
-                    (a["path"] as Array).append(_exit_point(floor_i, slot))
-                else:
-                    a["path"] = _route(node.position, _exit_point(floor_i, slot), true, floor_i)
+                a["path"] = _route(node.position, _exit_point(floor_i, slot), true, floor_i)
                 a["state"] = "leave"
         "leave":
             if _follow_path(a, node, rig, t, delta, 1.5):
@@ -1665,9 +1611,11 @@ func _move_drag(rel: Vector2, pos: Vector2) -> void:
         return
     if not _dragging:
         return
-    var vh := maxf(get_viewport().get_visible_rect().size.y, 1.0)
-    target_focus = clampf(target_focus + rel.y / vh * 1.9, 0.0, float(GameManager.FLOORS.size() - 1))
-    yaw = clampf(yaw - rel.x * 0.004, YAW_HOME - YAW_RANGE, YAW_HOME + YAW_RANGE)
+    # Dãy nhà nằm ngang nên vuốt NGANG là đi qua khu bên cạnh; vuốt dọc chỉ hé
+    # nghiêng khung nhìn một chút cho đỡ cứng.
+    var vw := maxf(get_viewport().get_visible_rect().size.x, 1.0)
+    target_focus = clampf(target_focus - rel.x / vw * 2.2, 0.0, float(GameManager.FLOORS.size() - 1))
+    yaw = clampf(yaw - rel.y * 0.0016, YAW_HOME - YAW_RANGE, YAW_HOME + YAW_RANGE)
 
 
 # ================= Kê bàn: chọn chỗ rồi đặt xuống =================
@@ -1854,7 +1802,9 @@ func _refresh_ghost() -> void:
     if _ghost == null or not is_instance_valid(_ghost):
         return
     var y: float = OUT_Y if place_zone == "out" else 0.0
-    _ghost.position = Vector3(place_x, float(place_floor) * FLOOR_H + y, place_z)
+    # place_x/z là toạ độ TRONG khu, còn bóng mờ treo thẳng dưới gốc cảnh nên
+    # phải cộng thêm vị trí ngang của khu đang kê.
+    _ghost.position = Vector3(wing_x(float(place_floor)) + place_x, y, place_z)
     _ghost.rotation.y = float(place_rot) * PI * 0.5
     place_valid = _spot_ok(place_kind, place_floor, place_zone, place_x, place_z, place_rot)
     _tint(_ghost, C_OK if place_valid else C_NO)
@@ -1868,11 +1818,12 @@ func _place_from_screen(sp: Vector2) -> void:
     var from := camera.project_ray_origin(sp)
     var dir := camera.project_ray_normal(sp)
     var allow := str(GameManager.FURNITURE.get(place_kind, {}).get("zone", "any"))
-    var can_out := allow != "in" and place_floor == 0
+    # khu nào cũng có vỉa hè riêng trước cửa nên chỗ nào cũng kê bàn ngoài được
+    var can_out := allow != "in"
     var can_in := allow != "out"
     var hd := ROOM_D * 0.5
     var p_out = _ray_plane(from, dir, OUT_Y) if can_out else null
-    var p_in = _ray_plane(from, dir, float(place_floor) * FLOOR_H) if can_in else null
+    var p_in = _ray_plane(from, dir, 0.0) if can_in else null
 
     var hit = null
     if p_out != null and (p_out as Vector3).z > hd + 0.3:
@@ -1890,7 +1841,9 @@ func _place_from_screen(sp: Vector2) -> void:
     var rect := _zone_rect(place_zone)
     var h := _furni_half(place_kind, place_rot)
     var hp: Vector3 = hit
-    place_x = clampf(snappedf(hp.x, 0.1), float(rect["x0"]) - 0.1 + h.x, float(rect["x1"]) + 0.1 - h.x)
+    # đổi từ toạ độ cảnh về toạ độ trong khu trước khi kẹp vào vùng cho phép
+    var local_x: float = hp.x - wing_x(float(place_floor))
+    place_x = clampf(snappedf(local_x, 0.1), float(rect["x0"]) - 0.1 + h.x, float(rect["x1"]) + 0.1 - h.x)
     place_z = clampf(snappedf(hp.z, 0.1), float(rect["z0"]) - 0.1 + h.y, float(rect["z1"]) + 0.1 - h.y)
     _refresh_ghost()
 

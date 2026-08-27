@@ -84,6 +84,11 @@ const ANKLE_LEVEL := 0.82      # mức bù cổ chân để bàn chân không ch
 ## Ghế nhựa cao khoảng 26cm: hông gần sát đất nên đầu gối phải vổng LÊN CAO
 ## hơn hông, cẳng chân gần như dựng đứng, người chồm ra trước về phía bàn.
 ## Số liệu suy từ chiều dài xương: đùi 0.42, cẳng chân 0.40, hông đứng ở 0.82.
+## Nhìn chúc từ trên xuống cả dãy nhà thì người cỡ thật trông to lộc ngộc so với
+## gian phòng. Thu nhỏ nguyên bộ xương (giữ nguyên chi tiết, chỉ nhỏ đi) cho ra
+## đúng tỉ lệ nhân vật tí hon kiểu idle tycoon.
+const CHAR_SCALE := 0.72
+
 const STOOL_SEAT := 0.26       # mặt ghế nhựa cách đất bao nhiêu mét
 const CHAIR_SEAT := 0.48       # mặt ghế thường (dùng cho sit())
 const STOOL_THIGH := -1.85     # đùi hất lên trước, quá phương ngang
@@ -156,6 +161,7 @@ static func build(key: String) -> Node3D:
 
 	var group := Node3D.new()
 	group.name = "Char" + key.capitalize()
+	group.scale = Vector3.ONE * CHAR_SCALE
 	var root := Node3D.new()
 	root.name = "Root"
 	group.add_child(root)
@@ -504,6 +510,13 @@ static func sit_stool(rig: Dictionary, t: float, chat: bool = false) -> void:
 		rig["torso"].rotation.y = 0.0
 		rig["head"].rotation.x = 0.30 - lift * 0.16
 		rig["head"].rotation.y = 0.0
+
+
+## Người đã thu nhỏ nhưng ghế thì vẫn cỡ thật, nên mông ngồi hụt xuống dưới mặt
+## ghế. Trả về đoạn phải kênh cả người lên cho vừa đúng mặt ghế.
+static func seat_lift(style: String) -> float:
+	var seat: float = STOOL_SEAT if style == "stool" else CHAIR_SEAT
+	return seat * (1.0 - CHAR_SCALE)
 
 
 ## Chén cơm + đũa cầm trên tay, mặc định ẩn. Gọi một lần lúc dựng nhân vật.

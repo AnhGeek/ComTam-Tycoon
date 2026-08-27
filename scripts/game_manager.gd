@@ -7,7 +7,7 @@ extends Node
 
 signal money_changed
 signal stock_changed
-signal state_changed          # nâng cấp / thuê người / mở tầng / đổi giá
+signal state_changed          # nâng cấp / thuê người / mở khu / đổi giá
 signal log_added(text: String)
 signal bubble_changed(station_id: String)
 signal day_ended(summary: Dictionary)
@@ -24,7 +24,7 @@ const DAY_DURATION := 180.0   # giây cho mỗi "ngày" trong game
 const FLOORS := [
     {"id": "street", "name": "Quán vỉa hè", "note": "Ngõ chợ Bàn Cờ · Q.3", "cost": 0},
     {"id": "aircon", "name": "Phòng máy lạnh", "note": "Khách văn phòng, giá cao hơn", "cost": 2500000},
-    {"id": "rooftop", "name": "Sân thượng", "note": "Bàn VIP, nướng than hoa", "cost": 12000000},
+    {"id": "rooftop", "name": "Khu sân vườn", "note": "Bàn VIP, nướng than hoa", "cost": 12000000},
 ]
 
 const INGREDIENTS := {
@@ -50,7 +50,7 @@ static func shop_ingredients() -> Array:
             out.append(id)
     return out
 
-## Mỗi quầy = một món; vị trí trong không gian 3D do TycoonWorld tự xếp theo tầng.
+## Mỗi quầy = một món; vị trí trong không gian 3D do TycoonWorld tự xếp theo khu.
 const STATIONS := {
     "grill": {"floor": "street", "name": "Lò nướng sườn", "dish": "Cơm tấm sườn", "glyph": "▤",
         "recipe": {"rice": 1, "grilled": 1, "veg": 1}, "base_price": 45000, "cycle": 12.0,
@@ -144,7 +144,7 @@ const MISSIONS := [
     {"id": "floor2", "name": "Mở phòng máy lạnh", "kind": "floors", "target": 2, "reward": 1000000},
     {"id": "serve300", "name": "Bán 300 phần cơm", "kind": "served", "target": 300, "reward": 2000000},
     {"id": "rep80", "name": "Đạt uy tín 80", "kind": "reputation", "target": 80, "reward": 1500000},
-    {"id": "floor3", "name": "Mở sân thượng", "kind": "floors", "target": 3, "reward": 5000000},
+    {"id": "floor3", "name": "Mở khu sân vườn", "kind": "floors", "target": 3, "reward": 5000000},
 ]
 
 # ---------------- Trạng thái ----------------
