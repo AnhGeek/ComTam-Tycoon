@@ -335,6 +335,64 @@ static func walk(rig: Dictionary, t: float, speed: float = 8.0) -> void:
 	rig["head"].rotation.x = 0.0
 
 
+## Leo cầu thang: gối nhấc cao hẳn để bước lên mặt bậc, người hơi chồm tới,
+## tay đánh gọn và bám hờ như đang vịn tay vịn. `up` = false thì là đi xuống.
+static func _climb_leg(leg: Dictionary, ph: float) -> void:
+	var lift := maxf(0.0, sin(ph))          # pha nhấc chân đặt lên bậc trên
+	var hip_rot := -0.18 - 0.80 * lift
+	var knee_rot := 0.24 + 1.05 * lift
+	leg["hip"].rotation.x = hip_rot
+	leg["knee"].rotation.x = knee_rot
+	leg["ankle"].rotation.x = -(hip_rot + knee_rot) * ANKLE_LEVEL
+
+
+static func climb(rig: Dictionary, t: float, up: bool = true) -> void:
+	var ph := t * 5.4
+	var legs: Array = rig["legs"]
+	_climb_leg(legs[0], ph)
+	_climb_leg(legs[1], ph + PI)
+
+	var arms: Array = rig["arms"]
+	var sw := sin(ph)
+	arms[0]["shoulder"].rotation.x = 0.34 * sw - 0.20
+	arms[1]["shoulder"].rotation.x = -0.34 * sw - 0.20
+	arms[0]["elbow"].rotation.x = -0.55 - 0.2 * maxf(0.0, -sw)
+	arms[1]["elbow"].rotation.x = -0.55 - 0.2 * maxf(0.0, sw)
+
+	rig["root"].position.y = absf(cos(ph)) * 0.045
+	rig["root"].rotation.z = sw * 0.02
+	rig["torso"].rotation.x = 0.20 if up else -0.07
+	rig["torso"].rotation.y = sw * 0.06
+	rig["head"].rotation.x = -0.16 if up else 0.12
+	rig["head"].rotation.y = 0.0
+
+
+## Người đứng lò: chân trụ vững, một tay cầm kẹp lật sườn, thỉnh thoảng nhấc
+## kẹp lên rồi hạ xuống, người hơi chồm về phía lò.
+static func grill_flip(rig: Dictionary, t: float) -> void:
+	_legs_rest(rig)
+	var ph := t * 2.1
+	var reach := 0.5 + 0.5 * sin(ph)          # nhịp đưa kẹp tới lui
+	var lift := maxf(0.0, sin(ph * 2.0))      # cú nhấc miếng thịt lên
+
+	var arms: Array = rig["arms"]
+	# tay phải cầm kẹp lật thịt
+	arms[1]["shoulder"].rotation.x = -0.95 - 0.25 * lift
+	arms[1]["shoulder"].rotation.z = -0.16
+	arms[1]["elbow"].rotation.x = -0.55 + 0.45 * reach
+	# tay trái quạt than
+	arms[0]["shoulder"].rotation.x = -0.55
+	arms[0]["shoulder"].rotation.z = 0.22
+	arms[0]["elbow"].rotation.x = -0.9 - 0.35 * sin(ph * 3.0)
+
+	rig["root"].position.y = 0.0
+	rig["root"].rotation.z = 0.0
+	rig["torso"].rotation.x = 0.17
+	rig["torso"].rotation.y = sin(ph) * 0.07
+	rig["head"].rotation.x = -0.22
+	rig["head"].rotation.y = 0.0
+
+
 static func _legs_rest(rig: Dictionary) -> void:
 	for l in rig["legs"]:
 		l["hip"].rotation = Vector3.ZERO

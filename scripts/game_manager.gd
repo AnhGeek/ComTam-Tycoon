@@ -13,6 +13,8 @@ signal bubble_changed(station_id: String)
 signal day_ended(summary: Dictionary)
 signal offline_earned(data: Dictionary)   # thu nhập khi vắng mặt
 signal missions_changed
+## Xong một mẻ nướng: sân khấu 3D cho người đứng lò bưng thịt vào trong quán.
+signal grill_batch_ready(count: int)
 
 const SAVE_PATH := "user://com_tam_save.json"
 const DAY_DURATION := 180.0   # giây cho mỗi "ngày" trong game
@@ -33,12 +35,25 @@ const INGREDIENTS := {
     "cha": {"name": "Chả trứng", "unit": "miếng", "price": 10000, "pack": 50},
     "veg": {"name": "Đồ chua · rau", "unit": "hũ", "price": 3000, "pack": 50},
     "tea": {"name": "Trà · đá", "unit": "bình", "price": 5000, "pack": 50},
+    "coal": {"name": "Than đá", "unit": "bao", "price": 24000, "pack": 20},
+    ## Sườn nướng sẵn không mua được ngoài chợ: phải tự nướng ở lò than vỉa hè.
+    "grilled": {"name": "Sườn nướng sẵn", "unit": "miếng", "price": 19000, "pack": 0,
+        "shop": false},
 }
+
+
+## Chỉ những thứ bán ngoài chợ mới hiện trong màn Mua sắm.
+static func shop_ingredients() -> Array:
+    var out: Array = []
+    for id in INGREDIENTS:
+        if bool(INGREDIENTS[id].get("shop", true)):
+            out.append(id)
+    return out
 
 ## Mỗi quầy = một món; vị trí trong không gian 3D do TycoonWorld tự xếp theo tầng.
 const STATIONS := {
     "grill": {"floor": "street", "name": "Lò nướng sườn", "dish": "Cơm tấm sườn", "glyph": "▤",
-        "recipe": {"rice": 1, "pork": 1, "veg": 1}, "base_price": 45000, "cycle": 12.0,
+        "recipe": {"rice": 1, "grilled": 1, "veg": 1}, "base_price": 45000, "cycle": 12.0,
         "batch": 2, "up_cost": 120000},
     "rice": {"floor": "street", "name": "Nồi cơm tấm", "dish": "Cơm tấm trứng", "glyph": "▦",
         "recipe": {"rice": 1, "egg": 2}, "base_price": 35000, "cycle": 10.0,
@@ -70,6 +85,14 @@ const STATIONS := {
         "recipe": {"veg": 1, "tea": 1}, "base_price": 45000, "cycle": 12.0,
         "batch": 3, "up_cost": 600000},
 }
+
+## Lò than vỉa hè: nướng cả mẻ sườn cùng lúc, xong thì bưng vào quầy trong quán.
+## Nâng cấp lò = mỗi mẻ nướng được nhiều miếng hơn.
+const GRILL_BATCH_BASE := 10       # số miếng một mẻ lúc lò còn cấp 1
+const GRILL_BATCH_STEP := 4        # mỗi cấp thêm chừng này miếng
+const GRILL_CYCLE := 24.0          # giây cho trọn một mẻ
+const GRILL_COAL := 1.0            # bao than cháy hết cho mỗi mẻ
+const GRILL_UP_COST := 240000.0
 
 ## Quản lý: thuê cho từng quầy để tự động thu tiền.
 const MANAGER_COST_MULT := 6.0
@@ -144,6 +167,8 @@ var decor: Dictionary = {}          # decor_id -> số lượng
 var furniture: Dictionary = {}      # kind -> số bộ đã mua nhưng chưa đặt
 var placed: Array = []              # bàn ghế đã đặt: {kind, floor, zone, x, z, rot}
 var floors_unlocked: Dictionary = {}
+var grill_level := 1                # cấp lò than vỉa hè
+var grill_progress := 0.0           # mẻ đang nướng, 0..1
 
 var stats: Dictionary = {}       # chỉ số cộng dồn cho nhiệm vụ
 var claimed: Dictionary = {}     # mission_id -> đã nhận thưởng
@@ -175,6 +200,8 @@ func _reset_defaults() -> void:
     stock.clear()
     for id in INGREDIENTS:
         stock[id] = 150.0
+    stock["coal"] = 40.0
+    stock["grilled"] = 0.0      # sườn nướng sẵn phải tự nướng, không có sẵn trong kho
     prices.clear()
     levels.clear()
     progress.clear()
@@ -205,6 +232,8 @@ func _reset_defaults() -> void:
     floors_unlocked.clear()
     for f in FLOORS:
         floors_unlocked[f["id"]] = f["cost"] == 0
+    grill_level = 1
+    grill_progress = 0.0
     stats = {"served": 0.0, "earned": 0.0, "upgrades": 0.0, "staff": 0.0,
         "managers": 0.0, "decor": 0.0, "floors": 1.0, "boosts": 0.0, "reputation": 50.0}
     claimed.clear()
@@ -272,6 +301,32 @@ func station_cycle(id: String) -> float:
 func station_batch(id: String) -> int:
     var lv := maxi(station_level(id), 1)
     return int(STATIONS[id]["batch"]) + int(floor((lv - 1) / 4.0))
+
+
+## Một mẻ nướng được bao nhiêu miếng sườn.
+func grill_batch() -> int:
+    return GRILL_BATCH_BASE + (grill_level - 1) * GRILL_BATCH_STEP
+
+
+func grill_upgrade_cost() -> float:
+    return GRILL_UP_COST * pow(1.8, float(grill_level - 1))
+
+
+## Lò có đang đỏ lửa không: phải còn sườn sống cho cả mẻ và còn than.
+func grill_running() -> bool:
+    return float(stock.get("pork", 0.0)) >= float(grill_batch()) \
+        and float(stock.get("coal", 0.0)) >= GRILL_COAL
+
+
+func upgrade_grill() -> bool:
+    var cost := grill_upgrade_cost()
+    if not _spend(cost):
+        return false
+    grill_level += 1
+    _bump("upgrades")
+    state_changed.emit()
+    _log("Nâng lò than lên cấp %d — mỗi mẻ %d miếng" % [grill_level, grill_batch()])
+    return true
 
 
 func station_price(id: String) -> float:
@@ -379,7 +434,7 @@ func has_ingredients(id: String, times: int = 1) -> bool:
 
 func missing_ingredients() -> Array:
     var out: Array = []
-    for ing in INGREDIENTS:
+    for ing in shop_ingredients():
         if float(stock.get(ing, 0.0)) <= 0.0:
             out.append(ing)
     return out
@@ -395,6 +450,9 @@ func _process(delta: float) -> void:
 
     var dirty_money := false
     var dirty_stock := false
+
+    if _tick_grill(d):
+        dirty_stock = true
 
     for id in STATIONS:
         if not is_station_open(id):
@@ -503,6 +561,24 @@ func _end_day() -> void:
     money_changed.emit()
     state_changed.emit()
     save_game()
+
+
+## Lò than vỉa hè chạy độc lập với các quầy: đủ sườn sống và còn than thì đỏ lửa,
+## hết một mẻ thì cả mẻ thành "sườn nướng sẵn" cho quầy trong quán dùng.
+func _tick_grill(d: float) -> bool:
+    if not grill_running():
+        return false
+    grill_progress += d / GRILL_CYCLE
+    if grill_progress < 1.0:
+        return false
+    grill_progress = 0.0
+    var batch := grill_batch()
+    stock["pork"] = float(stock.get("pork", 0.0)) - float(batch)
+    stock["coal"] = float(stock.get("coal", 0.0)) - GRILL_COAL
+    stock["grilled"] = float(stock.get("grilled", 0.0)) + float(batch)
+    grill_batch_ready.emit(batch)
+    _log("Nướng xong %d miếng sườn, bưng vào quầy" % batch)
+    return true
 
 
 # ---------------- Nhiệm vụ ----------------
@@ -624,7 +700,7 @@ func buy_ingredient(id: String, packs: int = 1) -> bool:
 
 func buy_all_low(threshold: float = 10.0) -> int:
     var count := 0
-    for id in INGREDIENTS:
+    for id in shop_ingredients():
         if float(stock.get(id, 0.0)) < threshold:
             if buy_ingredient(id):
                 count += 1
@@ -810,6 +886,7 @@ func save_game() -> void:
         "stock": stock, "prices": prices, "levels": levels, "pending": pending,
         "pending_portions": pending_portions, "managers": managers,
         "staff": staff, "decor": decor, "floors": floors_unlocked,
+        "grill_level": grill_level,
         "furniture": furniture, "placed": placed,
         "auto_open": auto_open, "stats": stats, "claimed": claimed,
         "last_seen": Time.get_unix_time_from_system(),
@@ -878,6 +955,7 @@ func load_game() -> bool:
             placed.append({"kind": kind, "floor": int(raw.get("floor", 0)),
                 "zone": str(raw.get("zone", "in")), "x": float(raw.get("x", 0.0)),
                 "z": float(raw.get("z", 0.0)), "rot": int(raw.get("rot", 0))})
+    grill_level = maxi(1, int(data.get("grill_level", 1)))
     var d_floors = data.get("floors", {})
     if typeof(d_floors) == TYPE_DICTIONARY:
         for fl in FLOORS:

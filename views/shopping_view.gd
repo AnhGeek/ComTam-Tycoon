@@ -153,7 +153,7 @@ func _build_ingredients() -> void:
         _toast(("Đã nhập %d loại nguyên liệu" % n) if n > 0 else "Kho vẫn còn đủ hàng"))
     list_box.add_child(quick)
 
-    for id in GameManager.INGREDIENTS:
+    for id in GameManager.shop_ingredients():
         var d: Dictionary = GameManager.INGREDIENTS[id]
         var qty := float(GameManager.stock.get(id, 0.0))
         var pack := int(d["pack"])

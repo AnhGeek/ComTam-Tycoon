@@ -143,6 +143,7 @@ func _build() -> void:
 	sub_vp.add_child(world)
 	world.station_tapped.connect(_on_station_tapped)
 	world.floor_tapped.connect(_on_floor_tapped)
+	world.grill_tapped.connect(_show_grill_card)
 	world.collected.connect(_on_collected)
 	world.focus_changed.connect(_on_focus_changed)
 	world.boosted.connect(_on_boosted)
@@ -398,6 +399,13 @@ func _refresh_tags() -> void:
 		c.queue_free()
 	tag_box.add_child(UIKit.tag("%d khách/phút" % int(GameManager.arrival_rate()), UIKit.ACCENT_800, UIKit.ACCENT_100))
 	tag_box.add_child(UIKit.tag("%d chỗ" % GameManager.seats(), UIKit.ACCENT_800, UIKit.ACCENT_100))
+	var grilled := int(GameManager.stock.get("grilled", 0.0))
+	var coal := int(GameManager.stock.get("coal", 0.0))
+	var grill_col := UIKit.OK if grilled > 0 else UIKit.BAD
+	tag_box.add_child(UIKit.tag("%d sườn nướng" % grilled, grill_col,
+		Color(0.31, 0.54, 0.36, 0.14) if grilled > 0 else Color(0.71, 0.33, 0.25, 0.12)))
+	if coal <= 0:
+		tag_box.add_child(UIKit.tag("hết than!", UIKit.BAD, Color(0.71, 0.33, 0.25, 0.12)))
 	var amb := GameManager.ambiance()
 	if amb > 0:
 		tag_box.add_child(UIKit.tag("không khí +%d" % amb, UIKit.OK, Color(0.31, 0.54, 0.36, 0.14)))
@@ -817,6 +825,51 @@ func _show_station_card(sid: String) -> void:
 				_toast("Quản lý sẽ tự thu tiền ở " + str(data["name"]).to_lower())
 				_clear_card())
 		v.add_child(mgr)
+
+	var close := UIKit.button_ghost("ĐÓNG", 12)
+	close.pressed.connect(_clear_card)
+	v.add_child(close)
+
+
+## Thẻ lò than vỉa hè: xem mẻ đang nướng, còn bao nhiêu than và nâng cấp lò.
+func _show_grill_card() -> void:
+	var v := _card_shell()
+	v.add_child(UIKit.heading("LÒ THAN VỈA HÈ", 19, UIKit.ACCENT_900))
+	v.add_child(UIKit.muted("Nướng sẵn sườn cho quầy trong quán. Mỗi mẻ đốt hết một bao than.", 12))
+	v.add_child(UIKit.separator())
+
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 12)
+	v.add_child(grid)
+	_kv(grid, "Cấp lò", "C%d" % GameManager.grill_level)
+	_kv(grid, "Mỗi mẻ", "%d miếng" % GameManager.grill_batch())
+	_kv(grid, "Một mẻ mất", "%d giây" % int(GameManager.GRILL_CYCLE))
+	_kv(grid, "Sườn sống", "%d miếng" % int(GameManager.stock.get("pork", 0.0)))
+	_kv(grid, "Than đá", "%d bao" % int(GameManager.stock.get("coal", 0.0)))
+	_kv(grid, "Sườn nướng sẵn", "%d miếng" % int(GameManager.stock.get("grilled", 0.0)))
+
+	var bar := UIKit.bar(GameManager.grill_progress * 100.0, UIKit.WARN, 8)
+	v.add_child(bar)
+	if GameManager.grill_running():
+		v.add_child(UIKit.tag("Lò đang đỏ lửa", UIKit.OK, Color(0.31, 0.54, 0.36, 0.14)))
+	else:
+		var why := "Thiếu sườn sống cho cả mẻ" if int(GameManager.stock.get("pork", 0.0)) \
+			< GameManager.grill_batch() else "Hết than đá"
+		v.add_child(UIKit.tag(why + " — vào Mua sắm nhập thêm", UIKit.BAD,
+			Color(0.71, 0.33, 0.25, 0.12)))
+
+	var cost := GameManager.grill_upgrade_cost()
+	var up := UIKit.button_primary("NÂNG LÒ · +%d miếng/mẻ · %s ₫" % [
+		GameManager.GRILL_BATCH_STEP, UIKit.money(cost)], 13)
+	up.custom_minimum_size = Vector2(0, 76)
+	up.disabled = not GameManager.can_afford(cost)
+	up.pressed.connect(func():
+		if GameManager.upgrade_grill():
+			_toast("Lò than lên cấp %d — mỗi mẻ %d miếng" % [
+				GameManager.grill_level, GameManager.grill_batch()])
+			_show_grill_card())
+	v.add_child(up)
 
 	var close := UIKit.button_ghost("ĐÓNG", 12)
 	close.pressed.connect(_clear_card)
