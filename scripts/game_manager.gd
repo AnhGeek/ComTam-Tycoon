@@ -112,6 +112,10 @@ const DECOR := {
     "fan": {"name": "Quạt hơi nước", "desc": "+3 điểm không khí", "cost": 300000, "amb": 3},
     "table": {"name": "Bộ bàn ghế inox", "desc": "+2 chỗ ngồi", "cost": 380000, "seats": 2},
     "aquarium": {"name": "Bể cá cảnh", "desc": "+8 điểm không khí", "cost": 900000, "amb": 8},
+    ## Chó cỏ chạy lăng quăng trong quán: không giúp bán được thêm phần cơm nào,
+    ## chỉ để quán có hồn — nên điểm không khí vừa phải mà giá thì rẻ.
+    "dog": {"name": "Chó cỏ giữ quán", "desc": "+4 điểm không khí, chạy lăng quăng",
+        "cost": 260000, "amb": 4},
 }
 
 ## Bàn ghế mua rời rồi tự tay đặt vào quán.
@@ -431,6 +435,37 @@ func income_per_second(station_id: String = "") -> float:
         var lai := station_price(str(id)) - station_cost_per_portion(str(id))
         total += lai * float(station_batch(str(id))) / maxf(station_cycle(str(id)), 0.1)
     return total * revenue_multiplier()
+
+
+## ---------------- Khách ngồi bàn chờ được phục vụ ----------------
+
+## Khách ngồi xuống là bắt đầu đếm giờ. Hết chừng này giây mà chưa ai bưng cơm
+## ra thì họ bỏ về. Tạm để chung một mức cho mọi loại khách; sau này muốn khách
+## sang chảnh mất kiên nhẫn nhanh hơn thì tách theo từng loại.
+const CUSTOMER_PATIENCE := 28.0
+
+## Bỏ về thì quán mất bao nhiêu uy tín, tuỳ loại khách: khách quen dễ tính mất
+## ít, khách văn phòng hay khách du lịch còn đi kể với người khác nên mất nhiều.
+const CUSTOMER_ANGER := {
+    "office": 3, "auntie": 3, "student": 1, "tourist": 2,
+    "xeom": 2, "driver": 1, "worker": 2,
+}
+## Thỉnh thoảng vớ phải người khó tính: một phần năm số lần là mất nặng hơn hẳn.
+const ANGER_SPIKE_CHANCE := 0.2
+const ANGER_MAX := 5
+
+
+## Một người khách bỏ về vì chờ lâu. Trả về số uy tín vừa mất.
+func customer_gave_up(kind: String) -> int:
+    var penalty := int(CUSTOMER_ANGER.get(kind, 2))
+    if randf() < ANGER_SPIKE_CHANCE:
+        penalty = randi_range(4, ANGER_MAX)
+    penalty = clampi(penalty, 1, ANGER_MAX)
+    reputation = maxf(0.0, reputation - float(penalty))
+    lost_today += 1
+    _log("Khách bỏ về vì chờ lâu · uy tín -%d" % penalty)
+    state_changed.emit()
+    return penalty
 
 
 ## Sức làm của cả một khu: cộng năng suất (phần/giây) của MỌI quầy đang mở trong

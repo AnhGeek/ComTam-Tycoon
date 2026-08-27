@@ -129,7 +129,8 @@ var _tables: Dictionary = {}      # chỉ số tầng -> Array[Vector3] tâm bà
 var _dragging := false
 var _drag_moved := 0.0
 var _floats: Array = []
-var _service: Dictionary = {}      # chỉ số khu -> vòng tròn báo nhịp ra món
+var _service: Dictionary = {}      # chỉ số khu -> vòng chờ món của người phục vụ
+var _meters: Array = []            # mọi vòng đếm giờ đang có trong cảnh
 var _grill: Dictionary = {}        # các bộ phận của lò than để cập nhật mỗi khung hình
 var _reported_floor := -1
 var _multi := false                 # đang có từ hai ngón trở lên chạm màn hình
@@ -365,6 +366,7 @@ func rebuild() -> void:
     _furni_by_index.clear()
     _blockers.clear()
     _service.clear()
+    _meters.clear()
     _grill.clear()
 
     for i in GameManager.FLOORS.size():
@@ -915,6 +917,17 @@ func _build_decor(node: Node3D, index: int, accent: Color) -> void:
     var lanterns := mini(int(GameManager.decor.get("lantern", 0)), 4)
     for i in lanterns:
         _cylinder(node, 0.14, 0.14, 0.34, Color8(0xc4, 0x6b, 0x4a), -1.7 + i * 1.15, FLOOR_H - 0.75, hd - 0.7, 10)
+    # Chó cỏ: mua một con thì khu nào cũng có một con chạy loăng quăng. Nhiều
+    # nhất hai con mỗi khu, đông quá thì rối mắt mà máy yếu cũng nặng thêm.
+    var dogs := mini(int(GameManager.decor.get("dog", 0)), 2)
+    for i in dogs:
+        var dog := ComTamChars.build_dog()
+        var spot := _dog_target(index)
+        dog.position = spot
+        node.add_child(dog)
+        _actors.append({"node": dog, "rig": ComTamChars.dog_rig_of(dog), "mode": "dog",
+            "floor": index, "state": "sniff", "t": randf() * 2.0, "target": spot,
+            "phase": randf() * 3.0})
     if int(GameManager.decor.get("sign", 0)) > 0:
         _box(node, 2.2, 0.4, 0.1, C_GOLD, 0, FLOOR_H - 1.55, -hd + 0.2, 0.35)
 
@@ -979,58 +992,80 @@ func _build_station(parent: Node3D, sid: String, pos: Vector3, floor_index: int)
     }
 
 
-## Vòng tròn "đang chờ món" treo NGAY TRÊN ĐẦU người phục vụ nên nó đi theo
-## người luôn. Vòng chạy nhanh hay chậm là do TỔNG sức làm của mọi quầy trong
-## khu (xem GameManager.service_time), và chỉ hiện lúc người ta đứng chờ món.
-func _build_service_meter(server: Node3D, index: int, accent: Color) -> void:
+## Vòng đếm giờ treo trên đầu một nhân vật, dùng ở hai chỗ: người phục vụ (xanh
+## — còn bao lâu nữa có đĩa để bưng) và khách ngồi bàn (đỏ — còn bao lâu nữa thì
+## họ hết kiên nhẫn). Vẽ bằng mấy vạch xếp thành vòng, sáng dần theo tiến độ.
+func _make_meter(host: Node3D, y: float, radius: float, lit: Color,
+        centre_c: Color) -> Dictionary:
     var ring := Node3D.new()
-    ring.name = "ServiceMeter"
-    # toạ độ nội bộ của nhân vật (đã thu nhỏ theo CHAR_SCALE), 2.25 là quá đỉnh đầu
-    ring.position = Vector3(0, 2.25, 0)
+    ring.name = "Meter"
+    ring.position = Vector3(0, y, 0)
     ring.visible = false
-    server.add_child(ring)
+    host.add_child(ring)
 
-    # đĩa nền tối cho các vạch nổi lên
-    _cylinder(ring, 0.27, 0.27, 0.04, Color8(0x22, 0x2c, 0x44), 0, 0, 0.03, 20) \
+    _cylinder(ring, radius, radius, 0.04, Color8(0x22, 0x2c, 0x44), 0, 0, 0.03, 20) \
         .rotation_degrees = Vector3(90, 0, 0)
 
     var segs: Array = []
     for i in SERVICE_SEGMENTS:
         var ang := TAU * float(i) / float(SERVICE_SEGMENTS) - PI * 0.5
-        var seg := _box(ring, 0.07, 0.115, 0.03, C_STEEL_LIGHT,
-            cos(ang) * 0.19, -sin(ang) * 0.19, 0.06, 0.4)
+        var seg := _box(ring, radius * 0.26, radius * 0.42, 0.03, C_STEEL_LIGHT,
+            cos(ang) * radius * 0.7, -sin(ang) * radius * 0.7, 0.06, 0.4)
         seg.rotation.z = -ang - PI * 0.5
         segs.append(seg)
 
-    # đĩa cơm nhỏ ở giữa cho biết vòng này nói về chuyện ra món
-    _cylinder(ring, 0.08, 0.08, 0.03, C_PLATE, 0, 0, 0.07, 14) \
+    _cylinder(ring, radius * 0.3, radius * 0.3, 0.03, C_PLATE, 0, 0, 0.07, 14) \
         .rotation_degrees = Vector3(90, 0, 0)
-    _cylinder(ring, 0.045, 0.045, 0.04, accent, 0, 0, 0.09, 12) \
+    _cylinder(ring, radius * 0.17, radius * 0.17, 0.04, centre_c, 0, 0, 0.09, 12) \
         .rotation_degrees = Vector3(90, 0, 0)
 
-    _service[index] = {"node": ring, "segs": segs, "ratio": 0.0, "accent": accent}
+    var meter := {"node": ring, "segs": segs, "ratio": 0.0, "lit": lit}
+    _meters.append(meter)
+    return meter
 
 
-## Vòng tròn luôn quay mặt về phía máy quay (máy quay chỉ đổi hướng ngang) và
-## sáng dần theo tiến độ mẻ tiếp theo.
+## Vòng của người phục vụ: chạy nhanh chậm theo TỔNG sức làm của mọi quầy trong
+## khu (xem GameManager.service_time), chỉ hiện lúc người ta đứng chờ món ở quầy.
+func _build_service_meter(server: Node3D, index: int, accent: Color) -> void:
+    _service[index] = _make_meter(server, 2.25, 0.27, C_OK, accent)
+
+
+## Vòng luôn quay mặt về phía máy quay (máy quay chỉ đổi hướng ngang) và sáng
+## dần theo tiến độ của riêng nó.
 func _update_service(_delta: float) -> void:
-    for index in _service:
-        var m: Dictionary = _service[index]
+    var keep: Array = []
+    for m in _meters:
         var ring: Node3D = m["node"]
-        if not is_instance_valid(ring) or not ring.visible:
+        if not is_instance_valid(ring):
             continue
-        # người phục vụ xoay hướng nào cũng mặc: đặt hướng TUYỆT ĐỐI cho vòng
+        keep.append(m)
+        if not ring.visible:
+            continue
+        # nhân vật xoay hướng nào cũng mặc: đặt hướng TUYỆT ĐỐI cho vòng
         ring.global_rotation = Vector3(deg_to_rad(CAM_PITCH), yaw, 0)
         var ratio := clampf(float(m["ratio"]), 0.0, 1.0)
-        var lit := int(round(ratio * float(SERVICE_SEGMENTS)))
+        var lit_n := int(round(ratio * float(SERVICE_SEGMENTS)))
+        var lit_c: Color = m["lit"]
         var segs: Array = m["segs"]
         for i in segs.size():
             var seg: MeshInstance3D = segs[i]
-            var on := i < lit
-            var c: Color = C_OK if on else Color8(0x3a, 0x46, 0x63)
+            var c: Color = lit_c if i < lit_n else Color8(0x3a, 0x46, 0x63)
             var mat := seg.material_override as StandardMaterial3D
             if mat != null and mat.albedo_color != c:
                 seg.material_override = ComTamChars.mat(c, 0.4)
+    if keep.size() != _meters.size():
+        _meters = keep
+
+
+## Bật/tắt và đặt tiến độ cho một vòng đếm giờ.
+func _set_meter(meter, ratio: float, show: bool = true) -> void:
+    if meter == null:
+        return
+    var m: Dictionary = meter
+    m["ratio"] = clampf(ratio, 0.0, 1.0)
+    var ring: Node3D = m["node"]
+    if is_instance_valid(ring) and ring.visible != show:
+        ring.visible = show
 
 
 func _touch_area(parent: Node3D, kind: String, id: String, pos: Vector3, size: Vector3) -> Area3D:
@@ -1162,10 +1197,11 @@ func _populate(node: Node3D, fid: String, index: int) -> void:
         var spawn := _spawn_point(index, i)
         ch2.position = spawn
         node.add_child(ch2)
-        _actors.append({"node": ch2, "rig": rig2, "mode": "customer",
+        _actors.append({"node": ch2, "rig": rig2, "mode": "customer", "key": key,
             "floor": index, "state": "enter", "t": -float(i) * 0.9, "seat": null,
             "slot": i, "spawn": spawn, "y": spawn.y, "path": [], "chatty": i % 3 == 0,
-            "meal": ComTamChars.attach_meal(rig2), "phase": randf() * 2.0})
+            "meal": ComTamChars.attach_meal(rig2), "phase": randf() * 2.0,
+            "meter": _make_meter(ch2, 2.25, 0.24, C_NO, C_NO)})
 
 
 # ================= Vòng lặp =================
@@ -1247,6 +1283,8 @@ func _update_actors(delta: float) -> void:
                 ComTamChars.cook(rig, t)
             "server":
                 _update_server(a, node, rig, t, delta)
+            "dog":
+                _update_dog(a, node, rig, t, delta)
             "customer":
                 _update_customer(a, node, rig, t, delta)
             "griller":
@@ -1263,47 +1301,65 @@ func _update_server(a: Dictionary, node: Node3D, rig: Dictionary, t: float, delt
     match str(a["state"]):
         "wait":
             # Đứng ở quầy chờ món ra. Chờ bao lâu là do TỔNG sức làm của mọi quầy
-            # trong khu, và vòng tròn trên quầy chạy đúng theo quãng chờ này.
+            # trong khu, và vòng trên đầu chạy đúng theo quãng chờ này.
             ComTamChars.idle(rig, t)
             node.rotation.y = PI
             var fid := str(GameManager.FLOORS[int(a["floor"])]["id"])
             var wait_for := GameManager.service_time(fid)
             _set_service_ratio(int(a["floor"]), float(a["t"]) / wait_for, true)
-            if float(a["t"]) > wait_for:
-                var target = _pick_table(int(a["floor"]))
-                if target != null:
-                    a["target"] = target
-                    a["state"] = "deliver"
-                    a["t"] = 0.0
-                    # bưng được đĩa rồi thì tắt vòng, đi giao đã
-                    _set_service_ratio(int(a["floor"]), 0.0, false)
+            if float(a["t"]) < wait_for:
+                return
+            # Có đĩa rồi: tìm người ĐANG NGỒI BÀN chờ ăn, ai chờ lâu nhất đi trước.
+            # Không có ai chờ thì cứ ôm đĩa đứng đó, không bưng ra bàn trống nữa.
+            var guest = _pick_hungry(int(a["floor"]))
+            if guest == null:
+                a["t"] = wait_for
+                return
+            var g: Dictionary = guest
+            g["booked"] = true
+            a["guest"] = g
+            a["target"] = _guest_spot(g)
+            a["state"] = "deliver"
+            a["t"] = 0.0
+            # bưng được đĩa rồi thì tắt vòng, đi giao đã
+            _set_service_ratio(int(a["floor"]), 0.0, false)
         "deliver":
             carrying = true
             var tgt: Vector3 = a["target"]
             a["y"] = tgt.y
-            # dừng cạnh bàn chứ không chui vào giữa bàn
+            # khách bỏ về giữa chừng thì khỏi giao, quay lại quầy
+            if not _guest_waiting(a.get("guest")):
+                a["guest"] = null
+                a["state"] = "return"
+                a["t"] = 0.0
+                return
+            # dừng cạnh khách chứ không chui vào giữa bàn
             var away := node.position - tgt
             away.y = 0.0
             if away.length() < 0.05:
                 away = Vector3(0, 0, 1)
             var stop: Vector3 = tgt + away.normalized() * 0.85
-            if _step_toward(node, stop, 1.45, delta):
+            if _step_toward(node, stop, 2.05, delta):
                 a["state"] = "serve"
                 a["t"] = 0.0
                 node.rotation.y = atan2(tgt.x - node.position.x, tgt.z - node.position.z)
             else:
                 ComTamChars.walk(rig, t, 8.0)
         "serve":
-            # cúi đặt đĩa xuống bàn: đĩa rời khay
+            # cúi đặt đĩa xuống bàn: đĩa rời khay, khách bắt đầu ăn
             ComTamChars.idle(rig, t)
             rig["torso"].rotation.x = 0.18
+            carrying = float(a["t"]) < 0.5
+            if float(a["t"]) > 0.5 and a.get("guest") != null:
+                _serve_guest(a["guest"])
+                a["guest"] = null
             if float(a["t"]) > 1.1:
                 a["state"] = "return"
                 a["t"] = 0.0
         "return":
             rig["torso"].rotation.x = 0.0
             a["y"] = 0.0
-            if _step_toward(node, a["pickup"], 1.55, delta):
+            if _step_toward(node, a["pickup"], 2.25, delta):
                 a["state"] = "wait"
                 a["t"] = 0.0
             else:
@@ -1315,15 +1371,89 @@ func _update_server(a: Dictionary, node: Node3D, rig: Dictionary, t: float, delt
     _level_tray(a["tray"])
 
 
-## Đặt tiến độ (và cho ẩn/hiện) vòng "đang chờ món" của một khu.
-func _set_service_ratio(index: int, ratio: float, show: bool = true) -> void:
-    if not _service.has(index):
+## Một chỗ bất kỳ trong lòng quán để con chó lững thững đi tới.
+func _dog_target(floor_i: int) -> Vector3:
+    var hw := ROOM_W * 0.5
+    var hd := ROOM_D * 0.5
+    for _try in 8:
+        var p := Vector3(randf_range(-hw + 0.7, hw - 0.7), 0.0, randf_range(-hd + 2.1, hd - 0.5))
+        # tránh chui vào bàn ghế cho khỏi lồng vào nhau
+        var clear := true
+        for c in _tables.get(floor_i, []):
+            var tp: Vector3 = c
+            if Vector2(p.x - tp.x, p.z - tp.z).length() < 1.0:
+                clear = false
+                break
+        if clear:
+            return p
+    return Vector3(0, 0, hd - 1.2)
+
+
+## Chó: đi tới một chỗ, đứng hít hà một lát, rồi lại chọn chỗ khác.
+func _update_dog(a: Dictionary, node: Node3D, rig: Dictionary, t: float, delta: float) -> void:
+    a["t"] = float(a["t"]) + delta
+    match str(a["state"]):
+        "walk":
+            ComTamChars.dog_walk(rig, t, 7.0)
+            if _step_toward(node, a["target"], 0.85, delta) or float(a["t"]) > 12.0:
+                a["state"] = "sniff"
+                a["t"] = 0.0
+        _:
+            ComTamChars.dog_sniff(rig, t)
+            if float(a["t"]) > 1.6 + randf() * 2.4:
+                a["target"] = _dog_target(int(a["floor"]))
+                a["state"] = "walk"
+                a["t"] = 0.0
+
+
+## Người khách đang ngồi bàn chờ cơm lâu nhất trong khu, và chưa có ai bưng cho.
+func _pick_hungry(floor_i: int):
+    var best = null
+    var best_wait := -1.0
+    for c in _actors:
+        if str(c.get("mode", "")) != "customer" or int(c.get("floor", -1)) != floor_i:
+            continue
+        if str(c.get("state", "")) != "wait_food" or bool(c.get("booked", false)):
+            continue
+        if float(c["t"]) > best_wait:
+            best_wait = float(c["t"])
+            best = c
+    return best
+
+
+## Chỗ để đặt đĩa: ngay trên bàn của người khách đó (khách nào cũng có ghế).
+func _guest_spot(g: Dictionary) -> Vector3:
+    var seat = g.get("seat")
+    if seat != null:
+        var sd: Dictionary = seat
+        var look: Vector3 = sd["look"]
+        return Vector3(look.x, float(sd.get("y", 0.0)), look.z)
+    var node: Node3D = g["node"]
+    return node.position
+
+
+## Người này còn ngồi đó chờ không (có thể đã bỏ về lúc mình đang đi tới).
+func _guest_waiting(guest) -> bool:
+    if guest == null:
+        return false
+    var g: Dictionary = guest
+    return str(g.get("state", "")) == "wait_food" and is_instance_valid(g["node"] as Node)
+
+
+## Đặt đĩa xuống: tắt vòng đỏ, khách chuyển sang ăn.
+func _serve_guest(guest) -> void:
+    if not _guest_waiting(guest):
         return
-    var m: Dictionary = _service[index]
-    m["ratio"] = clampf(ratio, 0.0, 1.0)
-    var ring: Node3D = m["node"]
-    if is_instance_valid(ring) and ring.visible != show:
-        ring.visible = show
+    var g: Dictionary = guest
+    g["state"] = "eat"
+    g["t"] = 0.0
+    g["booked"] = false
+    _set_meter(g.get("meter"), 0.0, false)
+
+
+## Đặt tiến độ (và cho ẩn/hiện) vòng chờ món của người phục vụ trong một khu.
+func _set_service_ratio(index: int, ratio: float, show: bool = true) -> void:
+    _set_meter(_service.get(index), ratio, show)
 
 
 ## Tay cầm khay giữ nguyên tư thế bưng, kể cả lúc đang bước đi.
@@ -1341,13 +1471,6 @@ func _carry_pose(rig: Dictionary) -> void:
 func _level_tray(tray: Node3D) -> void:
     var yaw_now := tray.global_basis.get_euler().y
     tray.global_basis = Basis.from_euler(Vector3(0.0, yaw_now, 0.0))
-
-
-func _pick_table(floor_i: int):
-    var list: Array = _tables.get(floor_i, [])
-    if list.is_empty():
-        return null
-    return list[randi() % list.size()]
 
 
 ## Khách xuất hiện ở đâu: khu nào cũng nằm mặt tiền nên ai cũng đi bộ dọc vỉa hè
@@ -1449,13 +1572,38 @@ func _update_customer(a: Dictionary, node: Node3D, rig: Dictionary, t: float, de
                     a["state"] = "walk_seat"
         "walk_seat":
             if _follow_path(a, node, rig, t, delta, 1.35):
-                a["state"] = "eat"
+                # ngồi xuống rồi nhưng CHƯA có cơm: bắt đầu đếm giờ chờ phục vụ
+                a["state"] = "wait_food"
                 a["t"] = 0.0
+                a["booked"] = false
                 var seat2: Dictionary = a["seat"]
                 var look: Vector3 = seat2["look"]
                 node.rotation.y = atan2(look.x - node.position.x, look.z - node.position.z)
                 # người đã thu nhỏ nên phải kênh lên cho mông chạm đúng mặt ghế
                 a["y"] = float(seat2["y"]) + ComTamChars.seat_lift(str(seat2.get("style", "chair")))
+                _set_meter(a.get("meter"), 0.0, true)
+        "wait_food":
+            # Ngồi ngóng: vòng ĐỎ trên đầu đầy dần. Đầy mà chưa ai bưng cơm ra thì
+            # đứng dậy đi về, và quán mất uy tín theo tính khí của loại khách đó.
+            var seat_w: Dictionary = a["seat"]
+            if str(seat_w.get("style", "chair")) == "stool":
+                ComTamChars.sit_stool(rig, t, true)
+            else:
+                ComTamChars.sit(rig, t)
+            (meal["bowl"] as Node3D).visible = false
+            (meal["sticks"] as Node3D).visible = false
+            var patience := GameManager.CUSTOMER_PATIENCE
+            _set_meter(a.get("meter"), float(a["t"]) / patience, true)
+            if float(a["t"]) > patience:
+                var lost := GameManager.customer_gave_up(str(a.get("key", "")))
+                spawn_float("-%d uy tín" % lost, node.global_position + Vector3(0, 1.9, 0), C_NO)
+                _set_meter(a.get("meter"), 0.0, false)
+                ComTamChars.stand_up(rig)
+                seat_w["taken"] = false
+                a["seat"] = null
+                a["booked"] = false
+                a["path"] = _route(node.position, _exit_point(floor_i, slot), true, floor_i)
+                a["state"] = "leave"
         "eat":
             var seat3: Dictionary = a["seat"]
             var chatty := bool(a["chatty"])
@@ -1467,6 +1615,7 @@ func _update_customer(a: Dictionary, node: Node3D, rig: Dictionary, t: float, de
             (meal["bowl"] as Node3D).visible = not chatty
             (meal["sticks"] as Node3D).visible = not chatty
             if float(a["t"]) > 11.0:
+                _set_meter(a.get("meter"), 0.0, false)
                 ComTamChars.stand_up(rig)
                 (meal["bowl"] as Node3D).visible = false
                 (meal["sticks"] as Node3D).visible = false

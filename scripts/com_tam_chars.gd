@@ -550,3 +550,100 @@ static func stand_up(rig: Dictionary) -> void:
 	for a in rig["arms"]:
 		a["shoulder"].rotation.z = 0.0
 	_legs_rest(rig)
+
+
+# ---------- Con chó của quán ----------
+## Chó cỏ nằm vạ vật ở quán cơm là hình ảnh quá quen. Dựng bằng mấy khối đơn
+## giản như người: bốn chân xoay được ở hông, đuôi ngoáy, đầu ngó nghiêng.
+const DOG_COAT := Color8(0xc9, 0x8f, 0x5c)
+const DOG_BELLY := Color8(0xf0, 0xdc, 0xc0)
+const DOG_NOSE := Color8(0x33, 0x2c, 0x2c)
+
+
+static func build_dog(coat: Color = DOG_COAT) -> Node3D:
+	var fur := mat(coat, 0.85)
+	var belly := mat(DOG_BELLY, 0.85)
+	var dark := mat(DOG_NOSE, 0.6)
+
+	var group := Node3D.new()
+	group.name = "Dog"
+	var root := Node3D.new()
+	root.name = "Root"
+	group.add_child(root)
+
+	# thân nằm ngang
+	var body := _mi(_cyl(0.125, 0.135, 0.44, 12), fur, 0, 0.34, 0)
+	body.rotation.x = PI / 2.0
+	root.add_child(body)
+	root.add_child(_mi(_cyl(0.1, 0.1, 0.3, 10), belly, 0, 0.27, 0.02))
+
+	# bốn chân: trước/sau, trái/phải
+	var legs: Array = []
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			var hip := Node3D.new()
+			hip.position = Vector3(sx * 0.085, 0.3, sz * 0.15)
+			hip.add_child(_mi(_cyl(0.035, 0.03, 0.28), fur, 0, -0.14, 0))
+			hip.add_child(_mi(_bx(0.075, 0.05, 0.11), dark, 0, -0.28, 0.02))
+			root.add_child(hip)
+			legs.append({"hip": hip, "front": sz > 0.0})
+
+	# cổ + đầu ngóc lên phía trước
+	var neck := Node3D.new()
+	neck.position = Vector3(0, 0.4, 0.2)
+	root.add_child(neck)
+	neck.add_child(_mi(_cyl(0.07, 0.085, 0.16), fur, 0, 0.06, 0.02))
+
+	var head := Node3D.new()
+	head.position = Vector3(0, 0.16, 0.03)
+	neck.add_child(head)
+	head.add_child(_mi(_sph(0.105), fur, 0, 0.02, 0))
+	var snout := _mi(_cyl(0.05, 0.062, 0.13), fur, 0, -0.01, 0.11)
+	snout.rotation.x = PI / 2.0
+	head.add_child(snout)
+	head.add_child(_mi(_sph(0.032), dark, 0, 0.0, 0.175))
+	for ex in [-0.045, 0.045]:
+		head.add_child(_mi(_sph(0.016), dark, ex, 0.05, 0.085))
+		# tai cụp về sau
+		var ear := _mi(_bx(0.045, 0.09, 0.02), fur, ex * 1.6, 0.09, -0.02)
+		ear.rotation.x = -0.35
+		head.add_child(ear)
+
+	# đuôi vểnh
+	var tail := Node3D.new()
+	tail.position = Vector3(0, 0.4, -0.2)
+	root.add_child(tail)
+	tail.rotation.x = -0.9
+	tail.add_child(_mi(_cyl(0.02, 0.035, 0.22), fur, 0, 0.11, 0))
+
+	group.set_meta("rig", {"root": root, "legs": legs, "head": head, "neck": neck, "tail": tail})
+	return group
+
+
+static func dog_rig_of(node: Node3D) -> Dictionary:
+	return node.get_meta("rig", {}) as Dictionary
+
+
+## Chạy lon ton: chân chéo nhau đánh cùng pha, thân nhún, đuôi ngoáy tít.
+static func dog_walk(rig: Dictionary, t: float, speed: float = 7.0) -> void:
+	var ph := t * speed
+	for l in rig["legs"]:
+		var leg: Dictionary = l
+		# chân trước phải cùng pha với chân sau trái, đúng kiểu bốn chân đi
+		var off: float = 0.0 if bool(leg["front"]) else PI
+		(leg["hip"] as Node3D).rotation.x = sin(ph + off) * 0.62
+	rig["root"].position.y = absf(cos(ph)) * 0.02
+	rig["tail"].rotation.y = sin(ph * 1.6) * 0.5
+	rig["neck"].rotation.x = -0.12
+	rig["head"].rotation.y = 0.0
+
+
+## Đứng hít hà: đầu ngó nghiêng, đuôi phe phẩy, người thở nhẹ.
+static func dog_sniff(rig: Dictionary, t: float) -> void:
+	for l in rig["legs"]:
+		(l["hip"] as Node3D).rotation.x = 0.0
+	var a := sin(t * 1.7)
+	rig["root"].position.y = a * 0.006
+	rig["tail"].rotation.y = sin(t * 3.2) * 0.7
+	rig["neck"].rotation.x = 0.35 + a * 0.12
+	rig["head"].rotation.y = sin(t * 0.8) * 0.5
