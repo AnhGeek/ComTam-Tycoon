@@ -433,6 +433,29 @@ func income_per_second(station_id: String = "") -> float:
     return total * revenue_multiplier()
 
 
+## Sức làm của cả một khu: cộng năng suất (phần/giây) của MỌI quầy đang mở trong
+## khu đó. Quầy càng lên cấp, mẻ càng nhiều và càng nhanh, nên tổng này càng lớn.
+func service_rate(fid: String) -> float:
+    var total := 0.0
+    for id in stations_on_floor(fid):
+        var sid := str(id)
+        if not is_station_open(sid):
+            continue
+        total += float(station_batch(sid)) / maxf(station_cycle(sid), 0.1)
+    return total
+
+
+## Bao lâu thì người phục vụ bưng được một đĩa: nghịch đảo của tổng năng suất
+## trên. Kẹp lại cho khỏi nhanh quá (nhìn giật) hay chậm quá (tưởng đứng hình).
+const SERVICE_BASE := 4.0          # nhịp chờ khi cả khu mới chỉ có một quầy cấp 1
+
+func service_time(fid: String) -> float:
+    var rate := service_rate(fid)
+    if rate <= 0.001:
+        return 12.0
+    return clampf(SERVICE_BASE / rate, 1.0, 12.0)
+
+
 ## Uy tín chia thành các bậc 25 điểm: ngôi sao trên HUD hiện bậc, thanh tím bên
 ## cạnh hiện phần đã đi được trong bậc hiện tại.
 const REP_PER_LEVEL := 25.0

@@ -26,6 +26,7 @@ const WING_DX := ROOM_W + WING_GAP
 const GRILL_POS := Vector3(-3.25, 0.0, ROOM_D * 0.5 + 0.95)
 const GRILL_MEATS := 6             # số miếng thịt bày trên vỉ cho vui mắt
 
+const SERVICE_SEGMENTS := 12       # số vạch trên vòng "đang ra món"
 const MAX_CUSTOMERS := 12          # trần số khách mỗi khu, giữ cho điện thoại yếu chạy mượt
 const ACTOR_LOD_RANGE := 1.5       # khu cách tầm nhìn quá xa thì thôi tính hoạt hình
 const ROOM_W := 7.6
@@ -128,6 +129,7 @@ var _tables: Dictionary = {}      # chỉ số tầng -> Array[Vector3] tâm bà
 var _dragging := false
 var _drag_moved := 0.0
 var _floats: Array = []
+var _service: Dictionary = {}      # chỉ số khu -> vòng tròn báo nhịp ra món
 var _grill: Dictionary = {}        # các bộ phận của lò than để cập nhật mỗi khung hình
 var _reported_floor := -1
 var _multi := false                 # đang có từ hai ngón trở lên chạm màn hình
@@ -362,6 +364,7 @@ func rebuild() -> void:
     _furni_nodes.clear()
     _furni_by_index.clear()
     _blockers.clear()
+    _service.clear()
     _grill.clear()
 
     for i in GameManager.FLOORS.size():
@@ -418,21 +421,11 @@ func _build_floor(node: Node3D, fid: String, index: int) -> void:
         0, wall_h - 0.5, -hd + 0.2, false)
     _label3d(node, "KHU %d" % (index + 1), 26, accent, 0, wall_h - 0.9, -hd + 0.2, false)
 
-    # đèn thả: treo trên thanh xà ngang vì không còn trần để móc
-    var beam_y := wall_h - 0.12
-    _box(node, ROOM_W, 0.1, 0.1, C_STEEL_LIGHT, 0, beam_y, 0.4, 0.6)
-    for lx in [-2.3, 0.0, 2.3]:
-        _cylinder(node, 0.02, 0.02, 0.5, C_STEEL_DARK, lx, beam_y - 0.3, 0.4, 6)
-        _cylinder(node, 0.32, 0.16, 0.26, accent, lx, beam_y - 0.63, 0.4, 12)
-
     # quầy bếp dọc tường sau
     _box(node, ROOM_W - 0.5, 0.95, 1.0, C_WOOD, 0, 0.48, -hd + 1.15)
     _box(node, ROOM_W - 0.5, 0.16, 1.02, accent, 0, 0.9, -hd + 1.15, 0.5)
     _box(node, ROOM_W - 0.3, 0.1, 1.16, C_WALL, 0, 1.02, -hd + 1.15, 0.55)
 
-    # khung cửa mở ra vỉa hè: khu nào cũng có, vì khu nào cũng nằm mặt tiền
-    _box(node, 0.18, wall_h * 0.72, 1.5, C_STEEL_LIGHT, hw - 0.09, wall_h * 0.36, hd - 0.9, 0.4)
-    _label3d(node, "LỐI VÀO", 22, accent, hw - 0.32, wall_h * 0.72 + 0.3, hd - 0.9)
     # vỉa hè trước quán chạy suốt cả dãy; riêng khu trệt mới có lò than + bảng hiệu
     _build_terrace(node, accent, index == 0)
 
@@ -757,20 +750,6 @@ func _build_terrace(node: Node3D, accent: Color, with_grill: bool = true) -> voi
     _box(t, ROOM_W + 1.0, 0.4, 0.55, C_WALL_DEEP, 0, 0.2, hd + 0.28, 0.85)
     _box(t, ROOM_W + 1.0, 0.06, 0.6, accent, 0, 0.42, hd + 0.28, 0.5)
 
-    # Mái hiên bây giờ chỉ là tấm che con con ngay trên khung cửa. Nhìn chúc từ
-    # trên xuống mà kéo dài hết mặt tiền thì nó úp kín cả lòng quán lẫn vỉa hè.
-    var aw_w := 2.8
-    var aw := Node3D.new()
-    aw.position = Vector3(hw - 0.9, FLOOR_H - OUT_Y - 0.6, hd + 0.16)
-    aw.rotation.x = -0.34
-    t.add_child(aw)
-    var strips := 6
-    for i in strips:
-        var c: Color = C_AWNING if i % 2 == 0 else Color8(0xfa, 0xf6, 0xef)
-        _box(aw, aw_w / float(strips), 0.07, 0.62, c,
-            -aw_w * 0.5 + (float(i) + 0.5) * aw_w / float(strips), 0, 0.31, 0.8)
-    _box(aw, aw_w + 0.1, 0.2, 0.07, C_AWNING, 0, -0.05, 0.62, 0.7)
-
     # Bảng hiệu chỉ dựng một cái ở đầu dãy (khu trệt), nép mé trái vỉa hè. Dựng
     # mỗi khu một cái thì cả dãy toàn cột, che mất lòng quán khi nhìn chúc xuống.
     if with_grill:
@@ -990,47 +969,68 @@ func _build_station(parent: Node3D, sid: String, pos: Vector3, floor_index: int)
         _:
             _box(holder, 0.9, 0.5, 0.7, body_col, 0, 1.25, 0)
 
-    var bar_y := 2.05
-    var name_y := 2.34
-    var bubble_y := 2.95
-
-    # thanh tiến độ mẻ
-    var bar_root := Node3D.new()
-    bar_root.position = Vector3(0, bar_y, 0)
-    holder.add_child(bar_root)
-    _box(bar_root, 0.9, 0.1, 0.05, Color8(0xe5, 0xea, 0xf5), 0, 0, 0, 0.6)
-    var fill := _box(bar_root, 0.84, 0.07, 0.07, accent, 0, 0, 0.01, 0.4)
-
-    # chỉ hiện nhãn khi quầy còn khoá; tên quầy đã có ở dải quầy dưới màn hình
-    var name_label := _label3d(holder, "", 24, C_LOCK, 0, name_y, 0)
-    name_label.outline_size = 14
-    name_label.outline_modulate = Color(1, 1, 1, 0.92)
-    name_label.visible = not open
-
-    # bong bóng tiền
-    var bubble := Node3D.new()
-    bubble.position = Vector3(0, bubble_y, 0)
-    bubble.visible = false
-    holder.add_child(bubble)
-    var bmat := StandardMaterial3D.new()
-    bmat.albedo_color = C_GOLD
-    bmat.emission_enabled = true
-    bmat.emission = C_GOLD
-    bmat.emission_energy_multiplier = 0.45
-    bmat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-    var plate := _box(bubble, 1.02, 0.38, 0.04, C_GOLD, 0, 0, 0, 0.35)
-    plate.material_override = bmat
-    var bubble_label := _label3d(bubble, "", 25, Color8(0x40, 0x30, 0x0a), 0, 0, 0.05)
-
+    # Trên đầu quầy giờ để trống hẳn: không thanh tiến độ, không nhãn tên, không
+    # bảng tiền vàng che mất người đứng bếp. Tiến độ từng quầy đã có ở dải quầy
+    # bên phải màn hình, còn tiền thì bấm nút THU (hoặc thuê quản lý) là gom hết.
     _touch_area(holder, "boost", sid, Vector3(0, 1.05, 0), Vector3(1.2, 1.9, 1.15))
-    var bubble_area := _touch_area(holder, "collect", sid, Vector3(0, bubble_y, 0), Vector3(1.12, 0.5, 0.4))
 
     _station_nodes[sid] = {
-        "holder": holder, "bubble": bubble, "bubble_label": bubble_label,
-        "name_label": name_label, "fill": fill, "bubble_y": bubble_y,
-        "bubble_area": bubble_area, "smoke": smoke, "floor": floor_index,
-        "punch": 0.0,
+        "holder": holder, "smoke": smoke, "floor": floor_index, "punch": 0.0,
     }
+
+
+## Vòng tròn "đang chờ món" treo NGAY TRÊN ĐẦU người phục vụ nên nó đi theo
+## người luôn. Vòng chạy nhanh hay chậm là do TỔNG sức làm của mọi quầy trong
+## khu (xem GameManager.service_time), và chỉ hiện lúc người ta đứng chờ món.
+func _build_service_meter(server: Node3D, index: int, accent: Color) -> void:
+    var ring := Node3D.new()
+    ring.name = "ServiceMeter"
+    # toạ độ nội bộ của nhân vật (đã thu nhỏ theo CHAR_SCALE), 2.25 là quá đỉnh đầu
+    ring.position = Vector3(0, 2.25, 0)
+    ring.visible = false
+    server.add_child(ring)
+
+    # đĩa nền tối cho các vạch nổi lên
+    _cylinder(ring, 0.27, 0.27, 0.04, Color8(0x22, 0x2c, 0x44), 0, 0, 0.03, 20) \
+        .rotation_degrees = Vector3(90, 0, 0)
+
+    var segs: Array = []
+    for i in SERVICE_SEGMENTS:
+        var ang := TAU * float(i) / float(SERVICE_SEGMENTS) - PI * 0.5
+        var seg := _box(ring, 0.07, 0.115, 0.03, C_STEEL_LIGHT,
+            cos(ang) * 0.19, -sin(ang) * 0.19, 0.06, 0.4)
+        seg.rotation.z = -ang - PI * 0.5
+        segs.append(seg)
+
+    # đĩa cơm nhỏ ở giữa cho biết vòng này nói về chuyện ra món
+    _cylinder(ring, 0.08, 0.08, 0.03, C_PLATE, 0, 0, 0.07, 14) \
+        .rotation_degrees = Vector3(90, 0, 0)
+    _cylinder(ring, 0.045, 0.045, 0.04, accent, 0, 0, 0.09, 12) \
+        .rotation_degrees = Vector3(90, 0, 0)
+
+    _service[index] = {"node": ring, "segs": segs, "ratio": 0.0, "accent": accent}
+
+
+## Vòng tròn luôn quay mặt về phía máy quay (máy quay chỉ đổi hướng ngang) và
+## sáng dần theo tiến độ mẻ tiếp theo.
+func _update_service(_delta: float) -> void:
+    for index in _service:
+        var m: Dictionary = _service[index]
+        var ring: Node3D = m["node"]
+        if not is_instance_valid(ring) or not ring.visible:
+            continue
+        # người phục vụ xoay hướng nào cũng mặc: đặt hướng TUYỆT ĐỐI cho vòng
+        ring.global_rotation = Vector3(deg_to_rad(CAM_PITCH), yaw, 0)
+        var ratio := clampf(float(m["ratio"]), 0.0, 1.0)
+        var lit := int(round(ratio * float(SERVICE_SEGMENTS)))
+        var segs: Array = m["segs"]
+        for i in segs.size():
+            var seg: MeshInstance3D = segs[i]
+            var on := i < lit
+            var c: Color = C_OK if on else Color8(0x3a, 0x46, 0x63)
+            var mat := seg.material_override as StandardMaterial3D
+            if mat != null and mat.albedo_color != c:
+                seg.material_override = ComTamChars.mat(c, 0.4)
 
 
 func _touch_area(parent: Node3D, kind: String, id: String, pos: Vector3, size: Vector3) -> Area3D:
@@ -1141,6 +1141,7 @@ func _populate(node: Node3D, fid: String, index: int) -> void:
     var dish := _make_dish(tray)
     dish.position = Vector3(0, 0.045, 0)
     dish.visible = false
+    _build_service_meter(linh, index, FLOOR_ACCENTS[index % FLOOR_ACCENTS.size()])
     _actors.append({"node": linh, "rig": rig, "mode": "server", "floor": index,
         "state": "wait", "t": 0.0, "dish": dish, "tray": tray, "pickup": pickup,
         "target": pickup, "y": 0.0, "phase": 0.0})
@@ -1185,6 +1186,7 @@ func _process(delta: float) -> void:
         focus_changed.emit(now_floor)
     _update_camera()
     _update_stations()
+    _update_service(delta)
     _update_grill(delta)
     _update_actors(delta)
     _update_floats(delta)
@@ -1194,33 +1196,9 @@ func _update_stations() -> void:
     var dt := get_process_delta_time()
     for sid in _station_nodes:
         var st: Dictionary = _station_nodes[sid]
-        var open := GameManager.is_station_open(str(sid))
         var holder: Node3D = st["holder"]
 
-        var amount := float(GameManager.pending.get(sid, 0.0))
-        var bubble: Node3D = st["bubble"]
-        if amount >= 1.0:
-            bubble.visible = true
-            (st["bubble_label"] as Label3D).text = UIKit.money_short(amount) + " ₫"
-            bubble.position.y = float(st["bubble_y"]) + sin(_time * 2.6) * 0.08
-            var k := 1.0 + sin(_time * 4.2) * 0.05
-            bubble.scale = Vector3(k, k, k)
-        elif bubble.visible:
-            bubble.visible = false
-        (st["bubble_area"] as Area3D).collision_layer = 1 if bubble.visible else 0
-
-        var nm: Label3D = st["name_label"]
-        nm.visible = not open
-        if nm.visible:
-            nm.text = str(GameManager.STATIONS[sid]["name"]).to_upper() + " · KHOÁ"
-            var away := absf(float(int(st["floor"])) - focus)
-            nm.modulate.a = clampf(1.0 - away * 0.85, 0.1, 1.0)
-
-        var pr := clampf(float(GameManager.progress.get(sid, 0.0)), 0.0, 1.0) if open else 0.0
-        var fill: MeshInstance3D = st["fill"]
-        fill.scale.x = maxf(pr, 0.001)
-        fill.position.x = -(1.0 - pr) * 0.42
-
+        # nhún một cái khi vừa được thúc nấu nhanh
         var punch := float(st["punch"])
         if punch > 0.0:
             punch = maxf(0.0, punch - dt * 3.5)
@@ -1284,15 +1262,21 @@ func _update_server(a: Dictionary, node: Node3D, rig: Dictionary, t: float, delt
 
     match str(a["state"]):
         "wait":
-            # đứng ở quầy chờ món ra
+            # Đứng ở quầy chờ món ra. Chờ bao lâu là do TỔNG sức làm của mọi quầy
+            # trong khu, và vòng tròn trên quầy chạy đúng theo quãng chờ này.
             ComTamChars.idle(rig, t)
             node.rotation.y = PI
-            if float(a["t"]) > 1.4:
+            var fid := str(GameManager.FLOORS[int(a["floor"])]["id"])
+            var wait_for := GameManager.service_time(fid)
+            _set_service_ratio(int(a["floor"]), float(a["t"]) / wait_for, true)
+            if float(a["t"]) > wait_for:
                 var target = _pick_table(int(a["floor"]))
                 if target != null:
                     a["target"] = target
                     a["state"] = "deliver"
                     a["t"] = 0.0
+                    # bưng được đĩa rồi thì tắt vòng, đi giao đã
+                    _set_service_ratio(int(a["floor"]), 0.0, false)
         "deliver":
             carrying = true
             var tgt: Vector3 = a["target"]
@@ -1329,6 +1313,17 @@ func _update_server(a: Dictionary, node: Node3D, rig: Dictionary, t: float, delt
     node.position.y = move_toward(node.position.y, float(a.get("y", 0.0)), delta * 1.8)
     _carry_pose(rig)
     _level_tray(a["tray"])
+
+
+## Đặt tiến độ (và cho ẩn/hiện) vòng "đang chờ món" của một khu.
+func _set_service_ratio(index: int, ratio: float, show: bool = true) -> void:
+    if not _service.has(index):
+        return
+    var m: Dictionary = _service[index]
+    m["ratio"] = clampf(ratio, 0.0, 1.0)
+    var ring: Node3D = m["node"]
+    if is_instance_valid(ring) and ring.visible != show:
+        ring.visible = show
 
 
 ## Tay cầm khay giữ nguyên tư thế bưng, kể cả lúc đang bước đi.
@@ -1861,18 +1856,8 @@ func _handle_tap(screen_pos: Vector2) -> void:
     var col: Node = hit["collider"]
     var kind := str(col.get_meta("kind", ""))
     var id := str(col.get_meta("id", ""))
-    var st: Dictionary = _station_nodes.get(id, {})
 
     match kind:
-        "collect":
-            var amount := float(GameManager.pending.get(id, 0.0))
-            if amount < 1.0:
-                return
-            GameManager.collect(id)
-            if not st.is_empty():
-                spawn_float("+" + UIKit.money_short(amount) + " ₫",
-                    (st["holder"] as Node3D).global_position + Vector3(0, 3.3, 0))
-            collected.emit(amount)
         "boost":
             # Chạm vào quầy là MỞ BẢNG nâng cấp. Trước đây cú chạm bị nuốt luôn
             # vào việc nấu nhanh nên chẳng ai tìm ra bảng; nút nấu nhanh bây giờ
