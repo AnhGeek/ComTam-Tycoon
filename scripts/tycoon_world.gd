@@ -1874,14 +1874,10 @@ func _handle_tap(screen_pos: Vector2) -> void:
                     (st["holder"] as Node3D).global_position + Vector3(0, 3.3, 0))
             collected.emit(amount)
         "boost":
-            if GameManager.boost_station(id):
-                if not st.is_empty():
-                    st["punch"] = 1.0
-                    spawn_float("+", (st["holder"] as Node3D).global_position + Vector3(0, 2.1, 0.4),
-                        FLOOR_ACCENTS[int(st["floor"]) % FLOOR_ACCENTS.size()])
-                boosted.emit(id)
-            else:
-                station_tapped.emit(id)
+            # Chạm vào quầy là MỞ BẢNG nâng cấp. Trước đây cú chạm bị nuốt luôn
+            # vào việc nấu nhanh nên chẳng ai tìm ra bảng; nút nấu nhanh bây giờ
+            # nằm sẵn trong bảng đó.
+            station_tapped.emit(id)
         "furni":
             furniture_tapped.emit(int(id))
         "floor":

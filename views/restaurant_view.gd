@@ -994,8 +994,28 @@ func _upgrade_card(sid: String) -> Control:
 	bonus.add_child(pad)
 	bonus.add_child(UIKit.label("Mốc sau: cấp %d" % (int(lv / 4) * 4 + 4), 12, UIKit.D_MUTED))
 
-	# thanh cấp: đầy dần qua mỗi mốc 4 cấp rồi cộng thêm một phần mỗi mẻ
-	v.add_child(UIKit.level_bar(float(lv % 4) / 4.0, "Cấp %d" % lv))
+	# Hàng cuối: thanh cấp chạy dài, nút nấu nhanh nép bên phải. Xếp thành hai
+	# hàng thì bảng cao quá, hàng ô chọn quầy bị màn hình cắt mất.
+	var foot := HBoxContainer.new()
+	foot.add_theme_constant_override("separation", int(UIKit.px(7)))
+	v.add_child(foot)
+
+	var lvbar := UIKit.level_bar(float(lv % 4) / 4.0, "Cấp %d" % lv)
+	lvbar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lvbar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	foot.add_child(lvbar)
+
+	# nấu nhanh: cú chạm "thúc" mẻ đang nấu, giữ lại nhịp bấm của game idle
+	var boost := UIKit.dark_button("NẤU NHANH", UIKit.NEON_BLUE, Color.WHITE, 13)
+	boost.custom_minimum_size = Vector2(UIKit.px(112), UIKit.px(30))
+	boost.disabled = not GameManager.has_ingredients(sid, 1)
+	boost.pressed.connect(func():
+		if GameManager.boost_station(sid):
+			_on_boosted(sid)
+			_show_station_card(sid, "upgrade")
+		else:
+			_toast("Hết nguyên liệu cho " + str(data["name"]).to_lower()))
+	foot.add_child(boost)
 	return card
 
 
