@@ -40,6 +40,28 @@ const ACCENT_700 := PRIMARY_DARK
 const ACCENT_800 := Color("2b3f9e")
 const ACCENT_900 := Color("1d2a63")
 
+# ---------- Bảng màu tối (bảng nâng cấp kiểu idle tycoon) ----------
+## Bảng điều khiển của game idle hiện đại là nền xanh đen, chữ trắng, nút xanh lá
+## phát sáng. Giữ riêng bộ màu này để các màn hình cũ (nền sáng) không đổi theo.
+const D_BG := Color("0f1728")          # nền ngoài cùng / thanh trên
+const D_SHEET := Color("16223a")       # thân bảng nâng cấp
+const D_CARD := Color("1b2942")        # thẻ bên trong bảng
+const D_SLOT := Color("223252")        # ô nhỏ, nút phụ, thanh nền
+const D_LINE := Color("2c3f63")
+const D_TEXT := Color("eaf1ff")
+const D_MUTED := Color("93a6c9")
+const D_TITLE := Color("6ea8dc")       # tiêu đề xanh thép: MAIN HALL / SEATS
+
+const NEON_BLUE := Color("1fa9f0")
+const NEON_BLUE_DARK := Color("1782bb")
+const NEON_GREEN := Color("35d47a")
+const NEON_GREEN_DARK := Color("22a75c")
+const NEON_RED := Color("ef4b45")
+const NEON_RED_DARK := Color("c2332e")
+const NEON_PURPLE := Color("6f4bff")
+const NEON_STAR := Color("c46bff")
+const NEON_GOLD := Color("ffc23d")
+
 # ---------- Kích thước ----------
 ## Viewport rộng 720 ăn khớp 1:1 với màn hình điện thoại 720px, mà mật độ điểm ảnh
 ## của máy là ~1,7 px mỗi dp. Nên mọi cỡ chữ khai báo trong code phải nhân lên
@@ -287,3 +309,159 @@ static func money_short(value: float) -> String:
     if v >= 1000.0:
         return sign_s + ("%.1f" % (v / 1000.0)).replace(".", ",") + "N"
     return sign_s + str(int(v))
+
+
+# ================= Bảng nâng cấp nền tối =================
+## Cả cụm dưới đây dựng lại đúng bộ giao diện của game idle tycoon tham chiếu:
+## bảng tối bo góc, tiêu đề + nút X đỏ, hàng chỉ số, hai thẻ tab, thẻ nâng cấp có
+## nút xanh lá, thanh cấp độ và hàng ô chọn món ở đáy.
+
+## Khung nền tối bo góc (thân bảng, thẻ, ô nhỏ đều dùng chung).
+static func dark_panel(bg: Color, pad: int = 14, radius: int = RADIUS,
+        border_w: int = 0, border_c: Color = D_LINE) -> PanelContainer:
+    var p := PanelContainer.new()
+    var sb := StyleBoxFlat.new()
+    sb.bg_color = bg
+    sb.set_corner_radius_all(int(px(radius)))
+    sb.set_content_margin_all(px(pad))
+    if border_w > 0:
+        sb.set_border_width_all(int(px(border_w)))
+        sb.border_color = border_c
+    p.add_theme_stylebox_override("panel", sb)
+    return p
+
+
+static func dark_button(text: String, bg: Color, fg: Color, size: int = 15,
+        radius: int = RADIUS_SM) -> Button:
+    var b := Button.new()
+    b.text = text
+    b.add_theme_font_size_override("font_size", fs(size))
+    var mk := func(c: Color, lift: float) -> StyleBoxFlat:
+        var sb := StyleBoxFlat.new()
+        sb.bg_color = c
+        sb.set_corner_radius_all(int(px(radius)))
+        sb.set_content_margin_all(px(10))
+        # gờ sáng ở đỉnh + bóng dày dưới đáy: nút trông dày như nút bấm thật
+        sb.shadow_color = Color(c.r * 0.35, c.g * 0.35, c.b * 0.45, 0.55)
+        sb.shadow_size = int(px(lift))
+        sb.shadow_offset = Vector2(0, px(lift * 0.5))
+        return sb
+    b.add_theme_stylebox_override("normal", mk.call(bg, 5.0))
+    b.add_theme_stylebox_override("hover", mk.call(bg.lightened(0.08), 5.0))
+    b.add_theme_stylebox_override("pressed", mk.call(bg.darkened(0.14), 1.0))
+    b.add_theme_stylebox_override("disabled", mk.call(D_SLOT, 0.0))
+    b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+    for st in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
+        b.add_theme_color_override(st, fg)
+    b.add_theme_color_override("font_disabled_color", D_MUTED)
+    return b
+
+
+## Nút X đỏ ở góc bảng.
+static func close_button(size: int = 42) -> Button:
+    var b := dark_button("", NEON_RED, Color.WHITE, 14, RADIUS_SM)
+    b.custom_minimum_size = Vector2(px(size), px(size))
+    var ic := UIIcon.make("close", px(size) * 0.44, Color.WHITE)
+    ic.set_anchors_preset(Control.PRESET_FULL_RECT)
+    b.add_child(ic)
+    return b
+
+
+## Ô chỉ số nền tối (0 ₫/s, 1%...). `icon_kind` rỗng thì chỉ có chữ.
+static func stat_slot(text: String, icon_kind: String = "", icon_c: Color = NEON_GREEN) -> Control:
+    var p := dark_panel(D_BG, 6, RADIUS_SM)
+    p.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    var h := HBoxContainer.new()
+    h.alignment = BoxContainer.ALIGNMENT_CENTER
+    h.add_theme_constant_override("separation", int(px(6)))
+    p.add_child(h)
+    if icon_kind != "":
+        h.add_child(UIIcon.make(icon_kind, px(16), icon_c))
+    var l := label(text, 15, D_TEXT)
+    l.name = "Value"
+    h.add_child(l)
+    return p
+
+
+## Thẻ tab (NÂNG CẤP / QUẢN LÝ). Tab đang chọn nền xanh, tab khoá có ổ khoá vàng.
+static func tab_button(text: String, icon_kind: String, active: bool, locked: bool = false) -> Button:
+    var bg: Color = NEON_BLUE if active else D_BG
+    var fg: Color = Color.WHITE if active else D_MUTED
+    var b := dark_button("", bg, fg, 14, RADIUS_SM)
+    b.custom_minimum_size = Vector2(0, px(36))
+    b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    var h := HBoxContainer.new()
+    h.set_anchors_preset(Control.PRESET_FULL_RECT)
+    h.alignment = BoxContainer.ALIGNMENT_CENTER
+    h.add_theme_constant_override("separation", int(px(7)))
+    h.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    b.add_child(h)
+    h.add_child(UIIcon.make(icon_kind, px(18), fg))
+    h.add_child(label(text.to_upper(), 14, fg))
+    if locked:
+        h.add_child(UIIcon.make("lock", px(16), NEON_GOLD))
+    return b
+
+
+## Thanh cấp độ: nền tối, phần đã đạt màu xanh lá, chữ "Cấp N" nằm giữa.
+##
+## Dùng ProgressBar chứ không phải ColorRect trong PanelContainer: container ép
+## con phủ kín khung, nên thanh nào làm kiểu đó cũng hiện đầy 100%.
+static func level_bar(ratio: float, text: String, h: int = 26,
+        fill_c: Color = NEON_GREEN, track_c: Color = D_BG) -> Control:
+    var pb := ProgressBar.new()
+    pb.min_value = 0.0
+    pb.max_value = 1.0
+    pb.value = clampf(ratio, 0.0, 1.0)
+    pb.show_percentage = false
+    pb.custom_minimum_size = Vector2(0, px(h))
+    var rad := int(px(h) * 0.5)
+    var bg := StyleBoxFlat.new()
+    bg.bg_color = track_c
+    bg.set_corner_radius_all(rad)
+    var fg := StyleBoxFlat.new()
+    fg.bg_color = fill_c
+    fg.set_corner_radius_all(rad)
+    pb.add_theme_stylebox_override("background", bg)
+    pb.add_theme_stylebox_override("fill", fg)
+    if text != "":
+        var l := label(text, 12, D_TEXT)
+        l.set_anchors_preset(Control.PRESET_FULL_RECT)
+        l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+        l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+        l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+        pb.add_child(l)
+    return pb
+
+
+## Ô vuông chọn món ở đáy bảng: icon to, giá nhỏ ở góc, ô đang chọn viền xanh.
+static func item_slot(icon_kind: String, cost_text: String, selected: bool,
+        affordable: bool = true, size: int = 60) -> Button:
+    var b := dark_button("", D_CARD if selected else D_BG, D_TEXT, 12, RADIUS_SM)
+    b.custom_minimum_size = Vector2(px(size), px(size))
+    if selected:
+        var sb := b.get_theme_stylebox("normal") as StyleBoxFlat
+        sb.set_border_width_all(int(px(2)))
+        sb.border_color = NEON_BLUE
+    var v := VBoxContainer.new()
+    v.set_anchors_preset(Control.PRESET_FULL_RECT)
+    v.alignment = BoxContainer.ALIGNMENT_CENTER
+    v.add_theme_constant_override("separation", int(px(2)))
+    v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    b.add_child(v)
+    var ic := UIIcon.make(icon_kind, px(size) * 0.42, D_TEXT if selected else D_MUTED)
+    ic.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+    v.add_child(ic)
+    var row := HBoxContainer.new()
+    row.alignment = BoxContainer.ALIGNMENT_CENTER
+    row.add_theme_constant_override("separation", int(px(4)))
+    row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    v.add_child(row)
+    row.add_child(UIIcon.make("cash", px(13), NEON_GREEN if affordable else D_MUTED))
+    row.add_child(label(cost_text, 11, D_TEXT if affordable else D_MUTED))
+    # ô đang chọn gắn thêm mũi tên xanh ở góc, đúng kiểu bảng gốc
+    if selected:
+        var badge := UIIcon.make("arrow_up", px(14), NEON_GREEN)
+        badge.position = Vector2(px(6), px(5))
+        b.add_child(badge)
+    return b

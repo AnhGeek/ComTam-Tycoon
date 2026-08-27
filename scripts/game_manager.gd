@@ -417,6 +417,35 @@ func total_pending() -> float:
     return t
 
 
+## Ước lượng tiền vào mỗi giây khi quán chạy đều: dùng cho dòng "₫/s" trên HUD
+## và trong bảng nâng cấp. Chỉ tính quầy đã mở và còn nguyên liệu để chạy.
+func income_per_second(station_id: String = "") -> float:
+    var total := 0.0
+    for id in STATIONS:
+        if station_id != "" and id != station_id:
+            continue
+        if not is_station_open(str(id)):
+            continue
+        if not is_floor_unlocked(str(STATIONS[id]["floor"])):
+            continue
+        var lai := station_price(str(id)) - station_cost_per_portion(str(id))
+        total += lai * float(station_batch(str(id))) / maxf(station_cycle(str(id)), 0.1)
+    return total * revenue_multiplier()
+
+
+## Uy tín chia thành các bậc 25 điểm: ngôi sao trên HUD hiện bậc, thanh tím bên
+## cạnh hiện phần đã đi được trong bậc hiện tại.
+const REP_PER_LEVEL := 25.0
+
+
+func rep_level() -> int:
+    return int(floor(reputation / REP_PER_LEVEL)) + 1
+
+
+func rep_progress() -> float:
+    return fmod(maxf(reputation, 0.0), REP_PER_LEVEL) / REP_PER_LEVEL
+
+
 func daily_salary() -> float:
     var total := 0.0
     for id in STAFF:

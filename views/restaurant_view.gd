@@ -5,7 +5,9 @@ var world: TycoonWorld
 var sub_vp: SubViewport
 
 var money_label: Label
+var rate_label: Label
 var rep_label: Label
+var rep_bar: ProgressBar
 var day_label: Label
 var day_bar: ProgressBar
 var tag_box: HBoxContainer
@@ -163,49 +165,85 @@ func _build() -> void:
 
 func _build_hud() -> Control:
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", UIKit.flat_pad(UIKit.ACCENT_900, 12, 0, UIKit.ACCENT_900, 0))
+	panel.add_theme_stylebox_override("panel",
+		UIKit.flat_pad(UIKit.D_BG, int(UIKit.px(8)), 0, UIKit.D_BG, 0))
 
 	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 6)
+	v.add_theme_constant_override("separation", int(UIKit.px(5)))
 	panel.add_child(v)
 
 	var top := HBoxContainer.new()
-	top.add_theme_constant_override("separation", 8)
+	top.add_theme_constant_override("separation", int(UIKit.px(10)))
 	v.add_child(top)
+
+	# ---- huy hiệu sao: bậc uy tín + thanh tím chạy tới bậc sau ----
+	top.add_child(_rep_badge())
 
 	var left := VBoxContainer.new()
 	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	left.add_theme_constant_override("separation", 1)
+	left.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	left.add_theme_constant_override("separation", 0)
 	top.add_child(left)
-	left.add_child(UIKit.heading("Cơm Tấm Bà Tấm", 19, UIKit.BG))
-	day_label = UIKit.label("NGÀY 1", 10, UIKit.ACCENT_400)
+	left.add_child(UIKit.label("Cơm Tấm Bà Tấm", 15, UIKit.D_TEXT))
+	day_label = UIKit.label("NGÀY 1", 10, UIKit.D_MUTED)
 	left.add_child(day_label)
 
-	money_label = UIKit.label("0 ₫", 17, UIKit.BG)
-	var money_chip := _chip("SỐ DƯ", money_label)
-	top.add_child(money_chip)
+	# ---- ví tiền: tờ tiền xanh + số dư + tốc độ kiếm tiền ----
+	top.add_child(_money_chip())
 
-	rep_label = UIKit.label("50", 17, UIKit.BG)
-	top.add_child(_chip("UY TÍN", rep_label))
-
-	day_bar = UIKit.bar(0.0, UIKit.ACCENT_400, 4)
+	day_bar = UIKit.bar(0.0, UIKit.NEON_BLUE, 3)
 	v.add_child(day_bar)
 	return panel
 
 
-func _chip(caption: String, value: Label) -> Control:
-	var p := PanelContainer.new()
-	var sb := UIKit.flat_pad(Color(1, 1, 1, 0.06), 6, 1, Color(1, 1, 1, 0.28))
-	p.add_theme_stylebox_override("panel", sb)
-	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 0)
-	v.alignment = BoxContainer.ALIGNMENT_CENTER
-	p.add_child(v)
-	var cap := UIKit.label(caption, 9, UIKit.ACCENT_400)
-	cap.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	v.add_child(cap)
-	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	v.add_child(value)
+## Huy hiệu ngôi sao bên trái: số trong sao là BẬC uy tín, thanh tím là phần uy
+## tín đã tích được trong bậc đó (đúng kiểu thanh kinh nghiệm của game idle).
+func _rep_badge() -> Control:
+	var wrap := Control.new()
+	wrap.custom_minimum_size = Vector2(UIKit.px(120), UIKit.px(40))
+	wrap.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+
+	rep_bar = UIKit.level_bar(0.0, "", 22, UIKit.NEON_PURPLE, UIKit.D_SLOT)
+	rep_bar.set_anchors_preset(Control.PRESET_FULL_RECT)
+	rep_bar.offset_left = UIKit.px(20)
+	rep_bar.offset_top = UIKit.px(9)
+	rep_bar.offset_bottom = -UIKit.px(9)
+	wrap.add_child(rep_bar)
+
+	var star := UIIcon.make("star", UIKit.px(40), UIKit.NEON_STAR)
+	wrap.add_child(star)
+
+	rep_label = UIKit.label("1", 14, Color.WHITE)
+	rep_label.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	rep_label.custom_minimum_size = Vector2(UIKit.px(40), UIKit.px(40))
+	rep_label.size = Vector2(UIKit.px(40), UIKit.px(40))
+	rep_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	rep_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	wrap.add_child(rep_label)
+	return wrap
+
+
+func _money_chip() -> Control:
+	var p := UIKit.dark_panel(UIKit.D_SHEET, 8, UIKit.RADIUS_SM)
+	p.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", int(UIKit.px(9)))
+	p.add_child(h)
+
+	var badge := UIKit.dark_panel(UIKit.NEON_GREEN_DARK, 5, UIKit.RADIUS_SM)
+	badge.add_child(UIIcon.make("cash", UIKit.px(20), Color("d8ffe8"), UIKit.NEON_GREEN_DARK))
+	h.add_child(badge)
+
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 0)
+	col.alignment = BoxContainer.ALIGNMENT_CENTER
+	h.add_child(col)
+	money_label = UIKit.label("0 ₫", 17, Color.WHITE)
+	money_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	col.add_child(money_label)
+	rate_label = UIKit.label("0 ₫/s", 10, UIKit.NEON_GREEN)
+	rate_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	col.add_child(rate_label)
 	return p
 
 
@@ -391,7 +429,10 @@ func _refresh_furni_btn() -> void:
 
 func _refresh_hud() -> void:
 	money_label.text = UIKit.money(GameManager.money) + " ₫"
+	rate_label.text = UIKit.money_short(GameManager.income_per_second()) + " ₫/s"
+	# ngôi sao hiện thẳng ĐIỂM uy tín, thanh tím là phần đã đi trong bậc hiện tại
 	rep_label.text = str(int(round(GameManager.reputation)))
+	rep_bar.value = maxf(GameManager.rep_progress(), 0.07)
 
 
 func _refresh_tags() -> void:
@@ -776,59 +817,247 @@ func _card_shell() -> VBoxContainer:
 	return v
 
 
-func _show_station_card(sid: String) -> void:
-	var data: Dictionary = GameManager.STATIONS[sid]
-	var v := _card_shell()
+## ---------- Bảng nâng cấp nền tối (dựng theo mẫu game idle tycoon) ----------
 
+## Mỗi quầy một biểu tượng vẽ tay, thay cho mấy ký tự ▤▦▩ hồi trước.
+const STATION_ICONS := {
+	"grill": "flame", "rice": "bowl", "prep": "seat", "drink": "cup",
+	"combo": "bowl", "dessert": "plant", "office": "manager",
+	"bbq": "flame", "vip": "star", "juice": "cup",
+}
+
+
+func _station_icon(sid: String) -> String:
+	return str(STATION_ICONS.get(sid, "bowl"))
+
+
+## Khung bảng tối: nền mờ (chạm ra ngoài là đóng) + tấm bảng bo góc ở giữa.
+func _sheet_shell(width: int = 400) -> VBoxContainer:
+	_clear_card()
+	var dim := ColorRect.new()
+	dim.color = Color(0.02, 0.04, 0.09, 0.62)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	# chạm vào vùng tối quanh bảng là đóng — không cần bấm đúng nút X
+	dim.gui_input.connect(func(e):
+		if (e is InputEventMouseButton and e.pressed) or (e is InputEventScreenTouch and e.pressed):
+			_clear_card())
+	card_layer.add_child(dim)
+	card_layer.mouse_filter = Control.MOUSE_FILTER_STOP
+
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card_layer.add_child(center)
+
+	var sheet := UIKit.dark_panel(UIKit.D_SHEET, 10, UIKit.RADIUS)
+	sheet.custom_minimum_size = Vector2(UIKit.px(width), 0)
+	center.add_child(sheet)
+
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", int(UIKit.px(6)))
+	sheet.add_child(v)
+	return v
+
+
+## Hàng tiêu đề: biểu tượng + tên viết hoa + nút X đỏ.
+func _sheet_header(parent: VBoxContainer, title: String, icon_kind: String) -> void:
 	var head := HBoxContainer.new()
-	head.add_theme_constant_override("separation", 8)
-	v.add_child(head)
-	var title := UIKit.heading(str(data["name"]), 18, UIKit.ACCENT_900)
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	head.add_child(title)
-	head.add_child(UIKit.tag("Cấp %d" % GameManager.station_level(sid)))
+	head.add_theme_constant_override("separation", int(UIKit.px(9)))
+	parent.add_child(head)
 
-	v.add_child(UIKit.muted("Món: %s · %d phần mỗi mẻ · %.1f giây" % [
-		str(data["dish"]), GameManager.station_batch(sid), GameManager.station_cycle(sid)], 12))
+	var ic := UIIcon.make(icon_kind, UIKit.px(21), UIKit.D_TITLE)
+	ic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	head.add_child(ic)
 
-	var grid := GridContainer.new()
-	grid.columns = 2
-	grid.add_theme_constant_override("h_separation", 10)
-	grid.add_theme_constant_override("v_separation", 4)
-	v.add_child(grid)
-	_kv(grid, "Giá bán", UIKit.money(GameManager.station_price(sid)) + " ₫")
-	_kv(grid, "Vốn / phần", UIKit.money(GameManager.station_cost_per_portion(sid)) + " ₫")
-	_kv(grid, "Lãi / phần", UIKit.money(GameManager.station_price(sid) - GameManager.station_cost_per_portion(sid)) + " ₫")
-	_kv(grid, "Phần chờ bán", "%d" % int(GameManager.pending_portions.get(sid, 0.0)))
+	var t := UIKit.label(title.to_upper(), 17, UIKit.D_TITLE)
+	t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	t.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	head.add_child(t)
 
-	v.add_child(UIKit.separator())
+	var x := UIKit.close_button(34)
+	x.pressed.connect(_clear_card)
+	head.add_child(x)
 
-	var up_cost := GameManager.station_upgrade_cost(sid)
-	var up := UIKit.button_primary("NÂNG CẤP · " + UIKit.money(up_cost) + " ₫", 14)
-	up.custom_minimum_size = Vector2(0, 75)
-	up.disabled = not GameManager.can_afford(up_cost)
+
+## Bảng của một quầy: chỉ số, hai tab, thẻ nâng cấp, thanh cấp và hàng ô chọn quầy.
+func _show_station_card(sid: String, tab: String = "upgrade") -> void:
+	var data: Dictionary = GameManager.STATIONS[sid]
+	var fid := str(data["floor"])
+	var v := _sheet_shell()
+	_sheet_header(v, str(GameManager.floor_data(fid)["name"]), "seat")
+
+	# ---- hàng chỉ số: tiền mỗi giây + mức hài lòng về giá ----
+	var stats := HBoxContainer.new()
+	stats.add_theme_constant_override("separation", int(UIKit.px(8)))
+	v.add_child(stats)
+	stats.add_child(UIKit.stat_slot(
+		UIKit.money_short(GameManager.income_per_second(sid)) + " ₫/s", "cash"))
+	stats.add_child(UIKit.stat_slot(
+		"%d%%" % int(round(GameManager.price_appeal(sid) * 100.0)), "chart", UIKit.NEON_BLUE))
+
+	# ---- hai tab ----
+	var tabs := HBoxContainer.new()
+	tabs.add_theme_constant_override("separation", int(UIKit.px(8)))
+	v.add_child(tabs)
+	var has_mgr := GameManager.has_manager(sid)
+	var t_up := UIKit.tab_button("Nâng cấp", "arrow_up", tab == "upgrade")
+	t_up.pressed.connect(func(): _show_station_card(sid, "upgrade"))
+	tabs.add_child(t_up)
+	var t_mgr := UIKit.tab_button("Quản lý", "manager", tab == "manager", not has_mgr)
+	t_mgr.pressed.connect(func(): _show_station_card(sid, "manager"))
+	tabs.add_child(t_mgr)
+
+	# ---- thẻ nội dung ----
+	if tab == "manager":
+		v.add_child(_manager_card(sid))
+	else:
+		v.add_child(_upgrade_card(sid))
+
+	# ---- hàng ô chọn quầy trong cùng khu ----
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", int(UIKit.px(8)))
+	v.add_child(row)
+	for other in GameManager.stations_on_floor(fid):
+		var oid := str(other)
+		var cost := float(GameManager.station_upgrade_cost(oid))
+		var slot := UIKit.item_slot(_station_icon(oid), UIKit.money_short(cost),
+			oid == sid, GameManager.can_afford(cost))
+		slot.pressed.connect(func(): _show_station_card(oid, tab))
+		row.add_child(slot)
+
+
+## Thẻ nâng cấp: icon vuông, tên + mô tả, giá và nút xanh lá, hàng thưởng thêm
+## và thanh cấp độ chạy dưới cùng.
+func _upgrade_card(sid: String) -> Control:
+	var data: Dictionary = GameManager.STATIONS[sid]
+	var lv := GameManager.station_level(sid)
+	var cost := float(GameManager.station_upgrade_cost(sid))
+	var card := UIKit.dark_panel(UIKit.D_CARD, 10, UIKit.RADIUS)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", int(UIKit.px(7)))
+	card.add_child(v)
+
+	var top := HBoxContainer.new()
+	top.add_theme_constant_override("separation", int(UIKit.px(10)))
+	v.add_child(top)
+
+	var tile := UIKit.dark_panel(UIKit.D_BG, 8, UIKit.RADIUS_SM)
+	tile.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	tile.add_child(UIIcon.make(_station_icon(sid), UIKit.px(32), UIKit.D_TEXT))
+	top.add_child(tile)
+
+	var mid := VBoxContainer.new()
+	mid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	mid.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	mid.add_theme_constant_override("separation", int(UIKit.px(3)))
+	top.add_child(mid)
+	mid.add_child(UIKit.label(str(data["name"]).to_upper(), 16, UIKit.D_TITLE))
+	var desc := UIKit.label("Nâng cấp để mỗi mẻ ra nhiều phần hơn, nấu nhanh hơn.",
+		10, UIKit.D_MUTED)
+	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	desc.custom_minimum_size = Vector2(UIKit.px(150), 0)
+	mid.add_child(desc)
+
+	var right := VBoxContainer.new()
+	right.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	right.add_theme_constant_override("separation", int(UIKit.px(4)))
+	top.add_child(right)
+	var price := HBoxContainer.new()
+	price.alignment = BoxContainer.ALIGNMENT_CENTER
+	price.add_theme_constant_override("separation", int(UIKit.px(5)))
+	right.add_child(price)
+	var can := GameManager.can_afford(cost)
+	price.add_child(UIIcon.make("cash", UIKit.px(15), UIKit.NEON_GREEN if can else UIKit.D_MUTED))
+	price.add_child(UIKit.label(UIKit.money_short(cost), 13,
+		UIKit.D_TEXT if can else UIKit.D_MUTED))
+	var up := UIKit.dark_button("NÂNG CẤP", UIKit.NEON_GREEN, Color("06301a"), 16)
+	up.custom_minimum_size = Vector2(UIKit.px(112), UIKit.px(44))
+	up.disabled = not can
 	up.pressed.connect(func():
 		if GameManager.upgrade_station(sid):
 			_toast(str(data["name"]) + " lên cấp %d" % GameManager.station_level(sid))
-			_clear_card())
-	v.add_child(up)
+			_show_station_card(sid, "upgrade"))
+	right.add_child(up)
+
+	# hàng thưởng: lãi mỗi phần hiện tại và mốc cấp tiếp theo
+	var bonus := HBoxContainer.new()
+	bonus.add_theme_constant_override("separation", int(UIKit.px(6)))
+	v.add_child(bonus)
+	bonus.add_child(UIIcon.make("cash", UIKit.px(14), UIKit.NEON_GREEN))
+	var lai := GameManager.station_price(sid) - GameManager.station_cost_per_portion(sid)
+	bonus.add_child(UIKit.label(UIKit.money_short(lai) + " ₫", 12, UIKit.D_TEXT))
+	bonus.add_child(UIKit.label("+%d phần/mẻ" % GameManager.station_batch(sid), 12, UIKit.NEON_GREEN))
+	var pad := Control.new()
+	pad.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bonus.add_child(pad)
+	bonus.add_child(UIKit.label("Mốc sau: cấp %d" % (int(lv / 4) * 4 + 4), 12, UIKit.D_MUTED))
+
+	# thanh cấp: đầy dần qua mỗi mốc 4 cấp rồi cộng thêm một phần mỗi mẻ
+	v.add_child(UIKit.level_bar(float(lv % 4) / 4.0, "Cấp %d" % lv))
+	return card
+
+
+## Tab quản lý: thuê người trông quầy để tiền tự chảy về, khỏi chạm bong bóng.
+func _manager_card(sid: String) -> Control:
+	var data: Dictionary = GameManager.STATIONS[sid]
+	var card := UIKit.dark_panel(UIKit.D_CARD, 10, UIKit.RADIUS)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", int(UIKit.px(7)))
+	card.add_child(v)
+
+	var top := HBoxContainer.new()
+	top.add_theme_constant_override("separation", int(UIKit.px(10)))
+	v.add_child(top)
+	var tile := UIKit.dark_panel(UIKit.D_BG, 8, UIKit.RADIUS_SM)
+	tile.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	tile.add_child(UIIcon.make("person", UIKit.px(32), UIKit.D_TEXT))
+	top.add_child(tile)
+
+	var mid := VBoxContainer.new()
+	mid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	mid.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	mid.add_theme_constant_override("separation", int(UIKit.px(3)))
+	top.add_child(mid)
+	mid.add_child(UIKit.label("QUẢN LÝ QUẦY", 16, UIKit.D_TITLE))
+	var desc := UIKit.label("Thuê người trông quầy: tiền tự thu về, khỏi chạm bong bóng.",
+		10, UIKit.D_MUTED)
+	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	desc.custom_minimum_size = Vector2(UIKit.px(150), 0)
+	mid.add_child(desc)
 
 	if GameManager.has_manager(sid):
-		v.add_child(UIKit.tag("Đã có quản lý — tự động thu tiền", UIKit.OK, Color(0.31, 0.54, 0.36, 0.14)))
-	else:
-		var mc := GameManager.manager_cost(sid)
-		var mgr := UIKit.button_secondary("THUÊ QUẢN LÝ · " + UIKit.money(mc) + " ₫", 13)
-		mgr.custom_minimum_size = Vector2(0, 68)
-		mgr.disabled = not GameManager.can_afford(mc)
-		mgr.pressed.connect(func():
-			if GameManager.hire_manager(sid):
-				_toast("Quản lý sẽ tự thu tiền ở " + str(data["name"]).to_lower())
-				_clear_card())
-		v.add_child(mgr)
+		var ok := UIKit.dark_button("ĐÃ CÓ QUẢN LÝ", UIKit.D_SLOT, UIKit.NEON_GREEN, 14)
+		ok.custom_minimum_size = Vector2(UIKit.px(112), UIKit.px(44))
+		ok.disabled = true
+		top.add_child(ok)
+		v.add_child(UIKit.level_bar(1.0, "Đang trực quầy"))
+		return card
 
-	var close := UIKit.button_ghost("ĐÓNG", 12)
-	close.pressed.connect(_clear_card)
-	v.add_child(close)
+	var mc := float(GameManager.manager_cost(sid))
+	var can := GameManager.can_afford(mc)
+	var right := VBoxContainer.new()
+	right.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	right.add_theme_constant_override("separation", int(UIKit.px(4)))
+	top.add_child(right)
+	var price := HBoxContainer.new()
+	price.alignment = BoxContainer.ALIGNMENT_CENTER
+	price.add_theme_constant_override("separation", int(UIKit.px(5)))
+	right.add_child(price)
+	price.add_child(UIIcon.make("cash", UIKit.px(15), UIKit.NEON_GREEN if can else UIKit.D_MUTED))
+	price.add_child(UIKit.label(UIKit.money_short(mc), 13, UIKit.D_TEXT if can else UIKit.D_MUTED))
+	var hire := UIKit.dark_button("THUÊ", UIKit.NEON_BLUE, Color.WHITE, 16)
+	hire.custom_minimum_size = Vector2(UIKit.px(112), UIKit.px(44))
+	hire.disabled = not can
+	hire.pressed.connect(func():
+		if GameManager.hire_manager(sid):
+			_toast("Quản lý sẽ tự thu tiền ở " + str(data["name"]).to_lower())
+			_show_station_card(sid, "manager"))
+	right.add_child(hire)
+
+	v.add_child(UIKit.level_bar(0.0, "Chưa có quản lý"))
+	return card
 
 
 ## Thẻ lò than vỉa hè: xem mẻ đang nướng, còn bao nhiêu than và nâng cấp lò.
