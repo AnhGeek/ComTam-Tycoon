@@ -6,7 +6,7 @@ var sub_vp: SubViewport
 
 var money_label: Label
 var rate_label: Label
-var rep_label: Label
+var rep_star: StarBadge
 var rep_bar: ProgressBar
 var day_label: Label
 var day_bar: ProgressBar
@@ -90,6 +90,9 @@ func _process(delta: float) -> void:
 	day_bar.value = GameManager.day_time / GameManager.DAY_DURATION * 100.0
 	day_label.text = "NGÀY %d" % GameManager.day
 	money_label.text = UIKit.money(GameManager.money) + " ₫"
+	# đặt lại chỗ đứng của ngôi sao mỗi khung hình: lần bố trí đầu tiên thanh còn
+	# chưa có bề ngang thật, tính một lần lúc dựng là sai chỗ
+	_place_rep_star()
 	var pend := GameManager.total_pending()
 	collect_btn.disabled = pend < 1.0
 	collect_btn.text = ("THU " + UIKit.money_short(pend) + " ₫") if pend >= 1.0 else "CHƯA CÓ TIỀN CHỜ"
@@ -182,11 +185,17 @@ func _build_hud() -> Control:
 	var left := VBoxContainer.new()
 	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	left.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	left.add_theme_constant_override("separation", 0)
+	left.add_theme_constant_override("separation", int(UIKit.px(1)))
 	top.add_child(left)
 	left.add_child(UIKit.label("Cơm Tấm Bà Tấm", 15, UIKit.D_TEXT))
+
+	# Hàng trạng thái nằm luôn trong thanh trên, chữ cùng cỡ cùng màu với dòng
+	# NGÀY: trước đây nó là mấy viên nhãn nổi đè lên khung 3D, che mất quán.
+	tag_box = HBoxContainer.new()
+	tag_box.add_theme_constant_override("separation", int(UIKit.px(6)))
+	left.add_child(tag_box)
 	day_label = UIKit.label("NGÀY 1", 10, UIKit.D_MUTED)
-	left.add_child(day_label)
+	tag_box.add_child(day_label)
 
 	# ---- ví tiền: tờ tiền xanh + số dư + tốc độ kiếm tiền ----
 	top.add_child(_money_chip())
@@ -200,27 +209,36 @@ func _build_hud() -> Control:
 ## tín đã tích được trong bậc đó (đúng kiểu thanh kinh nghiệm của game idle).
 func _rep_badge() -> Control:
 	var wrap := Control.new()
-	wrap.custom_minimum_size = Vector2(UIKit.px(120), UIKit.px(40))
+	wrap.custom_minimum_size = Vector2(UIKit.px(132), UIKit.px(42))
 	wrap.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	wrap.clip_contents = false
 
-	rep_bar = UIKit.level_bar(0.0, "", 22, UIKit.NEON_PURPLE, UIKit.D_SLOT)
+	# thanh chạy nằm dưới, chừa hai đầu cho ngôi sao không bị cắt
+	rep_bar = UIKit.level_bar(0.0, "", 20, UIKit.NEON_PURPLE, UIKit.D_SLOT)
 	rep_bar.set_anchors_preset(Control.PRESET_FULL_RECT)
-	rep_bar.offset_left = UIKit.px(20)
-	rep_bar.offset_top = UIKit.px(9)
-	rep_bar.offset_bottom = -UIKit.px(9)
+	rep_bar.offset_left = UIKit.px(6)
+	rep_bar.offset_right = -UIKit.px(6)
+	rep_bar.offset_top = UIKit.px(11)
+	rep_bar.offset_bottom = -UIKit.px(11)
 	wrap.add_child(rep_bar)
 
-	var star := UIIcon.make("star", UIKit.px(40), UIKit.NEON_STAR)
-	wrap.add_child(star)
-
-	rep_label = UIKit.label("1", 14, Color.WHITE)
-	rep_label.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	rep_label.custom_minimum_size = Vector2(UIKit.px(40), UIKit.px(40))
-	rep_label.size = Vector2(UIKit.px(40), UIKit.px(40))
-	rep_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	rep_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	wrap.add_child(rep_label)
+	# ngôi sao cưỡi trên thanh: uy tín tới đâu thì nó đứng tới đó
+	rep_star = StarBadge.new()
+	rep_star.body = UIKit.NEON_STAR
+	rep_star.custom_minimum_size = Vector2(UIKit.px(38), UIKit.px(38))
+	rep_star.size = Vector2(UIKit.px(38), UIKit.px(38))
+	rep_star.position = Vector2(0, UIKit.px(2))
+	wrap.add_child(rep_star)
 	return wrap
+
+
+## Đặt ngôi sao vào đúng chỗ trên thanh theo tiến độ uy tín hiện tại.
+func _place_rep_star() -> void:
+	if rep_star == null or rep_bar == null:
+		return
+	var wrap: Control = rep_star.get_parent()
+	var travel: float = maxf(wrap.size.x - rep_star.size.x, 0.0)
+	rep_star.position.x = travel * clampf(GameManager.rep_progress(), 0.0, 1.0)
 
 
 func _money_chip() -> Control:
@@ -252,19 +270,12 @@ func _build_overlay() -> Control:
 	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
 	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
-	# nhãn trạng thái góc trái trên
-	tag_box = HBoxContainer.new()
-	tag_box.position = Vector2(10, 10)
-	tag_box.add_theme_constant_override("separation", 6)
-	tag_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	overlay.add_child(tag_box)
-
 	# cảnh báo hết nguyên liệu
 	warn_panel = PanelContainer.new()
 	warn_panel.add_theme_stylebox_override("panel", UIKit.flat_pad(Color(0.71, 0.33, 0.25, 0.94), 8))
 	warn_panel.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	warn_panel.offset_top = 52
-	warn_panel.offset_bottom = 96
+	warn_panel.offset_top = 10
+	warn_panel.offset_bottom = 54
 	warn_panel.offset_left = 10
 	warn_panel.offset_right = -320
 	warn_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -430,26 +441,34 @@ func _refresh_furni_btn() -> void:
 func _refresh_hud() -> void:
 	money_label.text = UIKit.money(GameManager.money) + " ₫"
 	rate_label.text = UIKit.money_short(GameManager.income_per_second()) + " ₫/s"
-	# ngôi sao hiện thẳng ĐIỂM uy tín, thanh tím là phần đã đi trong bậc hiện tại
-	rep_label.text = str(int(round(GameManager.reputation)))
-	rep_bar.value = maxf(GameManager.rep_progress(), 0.07)
+	# ngôi sao hiện thẳng ĐIỂM uy tín và trượt dọc thanh theo bậc đang tích
+	rep_star.value = int(round(GameManager.reputation))
+	rep_bar.value = GameManager.rep_progress()
+	_place_rep_star()
 
 
 func _refresh_tags() -> void:
+	# dòng NGÀY luôn đứng đầu, mấy mục trạng thái nối tiếp phía sau
 	for c in tag_box.get_children():
-		c.queue_free()
-	tag_box.add_child(UIKit.tag("%d khách/phút" % int(GameManager.arrival_rate()), UIKit.ACCENT_800, UIKit.ACCENT_100))
-	tag_box.add_child(UIKit.tag("%d chỗ" % GameManager.seats(), UIKit.ACCENT_800, UIKit.ACCENT_100))
+		if c != day_label:
+			c.queue_free()
+
+	var items: Array = [
+		{"text": "%d khách/phút" % int(GameManager.arrival_rate()), "color": UIKit.D_MUTED},
+		{"text": "%d chỗ" % GameManager.seats(), "color": UIKit.D_MUTED},
+	]
 	var grilled := int(GameManager.stock.get("grilled", 0.0))
-	var coal := int(GameManager.stock.get("coal", 0.0))
-	var grill_col := UIKit.OK if grilled > 0 else UIKit.BAD
-	tag_box.add_child(UIKit.tag("%d sườn nướng" % grilled, grill_col,
-		Color(0.31, 0.54, 0.36, 0.14) if grilled > 0 else Color(0.71, 0.33, 0.25, 0.12)))
-	if coal <= 0:
-		tag_box.add_child(UIKit.tag("hết than!", UIKit.BAD, Color(0.71, 0.33, 0.25, 0.12)))
+	items.append({"text": "%d sườn nướng" % grilled,
+		"color": UIKit.NEON_GREEN if grilled > 0 else UIKit.NEON_RED})
+	if int(GameManager.stock.get("coal", 0.0)) <= 0:
+		items.append({"text": "hết than!", "color": UIKit.NEON_RED})
 	var amb := GameManager.ambiance()
 	if amb > 0:
-		tag_box.add_child(UIKit.tag("không khí +%d" % amb, UIKit.OK, Color(0.31, 0.54, 0.36, 0.14)))
+		items.append({"text": "không khí +%d" % amb, "color": UIKit.NEON_GREEN})
+
+	for it in items:
+		tag_box.add_child(UIKit.label("·", 10, UIKit.D_LINE))
+		tag_box.add_child(UIKit.label(str(it["text"]).to_upper(), 10, it["color"]))
 
 	var missing := GameManager.missing_ingredients()
 	if missing.is_empty():
@@ -537,7 +556,7 @@ func _rebuild_strip() -> void:
 func _strip_card(sid: String) -> Control:
 	var data: Dictionary = GameManager.STATIONS[sid]
 	var card := UIKit.card(8)
-	card.custom_minimum_size = Vector2(0, 116)
+	card.custom_minimum_size = Vector2(0, 74)
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
 	var v := VBoxContainer.new()
@@ -558,16 +577,12 @@ func _strip_card(sid: String) -> Control:
 	var bar := UIKit.bar(0.0, UIKit.OK, 6)
 	v.add_child(bar)
 
-	var btn := UIKit.button_primary("", 12)
-	btn.custom_minimum_size = Vector2(0, 56)
-	btn.pressed.connect(func():
-		if GameManager.upgrade_station(sid):
-			_toast("%s lên cấp %d" % [str(data["name"]), GameManager.station_level(sid)])
-		else:
-			_toast("Chưa đủ tiền nâng cấp"))
-	v.add_child(btn)
+	# Dải này chỉ để NGÓ tình trạng. Muốn nâng cấp thì chạm vào quầy trong quán,
+	# bảng nâng cấp mở ra ở đó.
+	var note := UIKit.muted("", 11)
+	v.add_child(note)
 
-	strip_cards[sid] = {"lv": lv, "bar": bar, "btn": btn}
+	strip_cards[sid] = {"lv": lv, "bar": bar, "note": note}
 	return card
 
 
@@ -582,10 +597,14 @@ func _sync_strip() -> void:
 		var open := GameManager.is_station_open(str(sid))
 		(r["lv"] as Label).text = "C%d" % GameManager.station_level(str(sid)) if open else "—"
 		(r["bar"] as ProgressBar).value = float(GameManager.progress.get(sid, 0.0)) * 100.0
-		var btn: Button = r["btn"]
-		var cost := GameManager.station_upgrade_cost(str(sid))
-		btn.text = "▲ " + UIKit.money_short(cost)
-		btn.disabled = not GameManager.can_afford(cost)
+		var note: Label = r["note"]
+		if not open:
+			note.text = "chưa mở"
+		else:
+			# đang chờ bán bao nhiêu phần + tiền đang nằm ở quầy
+			var waiting := int(GameManager.pending_portions.get(sid, 0.0))
+			var cash := float(GameManager.pending.get(sid, 0.0))
+			note.text = "%d phần chờ · %s ₫" % [waiting, UIKit.money_short(cash)]
 
 
 func _on_boosted(sid: String) -> void:
