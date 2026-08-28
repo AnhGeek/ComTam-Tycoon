@@ -574,19 +574,25 @@ func _strip_card(sid: String) -> Control:
 
 	# Dải này chỉ để NGÓ tình trạng. Muốn nâng cấp thì chạm vào quầy trong quán,
 	# bảng nâng cấp mở ra ở đó.
+	var foot := HBoxContainer.new()
+	foot.add_theme_constant_override("separation", int(UIKit.px(5)))
+	v.add_child(foot)
 	var note := UIKit.label("", 11, UIKit.D_MUTED)
-	v.add_child(note)
+	note.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	note.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	note.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	note.clip_text = true
+	foot.add_child(note)
 
-	# Hết nguyên liệu thì nhập ngay tại đây, khỏi lặn lội sang màn Mua sắm.
-	# Nhập xong quầy hết thiếu nên nút tự biến mất.
-	var buy := UIKit.dark_button("", UIKit.WARN, Color("3d2402"), 12)
-	buy.custom_minimum_size = Vector2(0, UIKit.px(32))
-	buy.visible = false
-	buy.pressed.connect(_on_strip_restock.bind(sid))
-	v.add_child(buy)
+	# Hết nguyên liệu thì nhập ngay tại đây, khỏi lặn lội sang màn Mua sắm. Mỗi
+	# thứ thiếu một nút con, bấm cái nào nhập cái đó; nhập xong nút tự biến mất.
+	var buys := HBoxContainer.new()
+	buys.add_theme_constant_override("separation", int(UIKit.px(4)))
+	buys.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	foot.add_child(buys)
 
 	strip_cards[sid] = {"lv": lv, "bar": bar, "note": note, "alert": alert,
-		"card": card, "buy": buy}
+		"card": card, "buys": buys, "need": ""}
 	return card
 
 
@@ -611,13 +617,8 @@ func _sync_strip() -> void:
 			var k := 0.5 + 0.5 * sin(t)
 			alert.scale = Vector2.ONE * (0.9 + 0.35 * k)
 			alert.modulate.a = 0.45 + 0.55 * k
-		var buy: Button = r["buy"]
 		var need: Array = _restock_list(str(sid)) if short else []
-		buy.visible = not need.is_empty()
-		if buy.visible:
-			var cost := _restock_cost(need)
-			buy.text = "MUA NGAY · %s ₫" % UIKit.money_short(cost)
-			buy.disabled = not GameManager.can_afford(cost)
+		_sync_buy_row(r, need)
 		if not open:
 			note.text = "chưa mở"
 		elif short:
@@ -650,28 +651,47 @@ func _restock_list(sid: String) -> Array:
 	return out
 
 
-func _restock_cost(list: Array) -> float:
-	var total := 0.0
-	for ing in list:
-		var d: Dictionary = GameManager.INGREDIENTS[ing]
-		total += float(d["price"]) * float(d["pack"])
-	return total
+func _pack_cost(ing: String) -> float:
+	var d: Dictionary = GameManager.INGREDIENTS[ing]
+	return float(d["price"]) * float(d["pack"])
 
 
-func _on_strip_restock(sid: String) -> void:
-	var need := _restock_list(sid)
-	if need.is_empty():
+## Mỗi thứ đang thiếu một nút con. Dựng lại chỉ khi danh sách thiếu đổi — hàm
+## này chạy mỗi khung hình.
+func _sync_buy_row(r: Dictionary, need: Array) -> void:
+	var buys: HBoxContainer = r["buys"]
+	var key := ",".join(need)
+	if str(r["need"]) != key:
+		r["need"] = key
+		for c in buys.get_children():
+			c.queue_free()
+		for ing in need:
+			buys.add_child(_buy_chip(str(ing)))
+	for c in buys.get_children():
+		var b := c as Button
+		b.disabled = not GameManager.can_afford(_pack_cost(str(b.get_meta("ing"))))
+
+
+## Nút nhỏ: tên món + giá một bao.
+func _buy_chip(ing: String) -> Button:
+	var d: Dictionary = GameManager.INGREDIENTS[ing]
+	var b := UIKit.dark_button("%s · %s" % [str(d["name"]).split(" ")[0],
+		UIKit.money_short(_pack_cost(ing))], UIKit.WARN, Color("3d2402"), 10, 8)
+	b.custom_minimum_size = Vector2(0, UIKit.px(22))
+	b.add_theme_constant_override("h_separation", 0)
+	b.set_meta("ing", ing)
+	b.pressed.connect(_on_buy_chip.bind(ing))
+	return b
+
+
+func _on_buy_chip(ing: String) -> void:
+	var d: Dictionary = GameManager.INGREDIENTS[ing]
+	if not GameManager.can_afford(_pack_cost(ing)):
+		_toast("Chưa đủ tiền nhập " + str(d["name"]).to_lower())
 		return
-	if not GameManager.can_afford(_restock_cost(need)):
-		_toast("Chưa đủ tiền để nhập hàng")
-		return
-	var names: Array = []
-	for ing in need:
-		if GameManager.buy_ingredient(str(ing)):
-			names.append(str(GameManager.INGREDIENTS[ing]["name"]).to_lower())
-	if names.is_empty():
-		return
-	_toast("Đã nhập " + ", ".join(names))
+	if GameManager.buy_ingredient(ing):
+		_toast("Đã nhập %d %s %s" % [int(d["pack"]), str(d["unit"]),
+			str(d["name"]).to_lower()])
 
 
 func _on_boosted(sid: String) -> void:
