@@ -11,8 +11,6 @@ var rep_bar: ProgressBar
 var day_label: Label
 var day_bar: ProgressBar
 var tag_box: HBoxContainer
-var warn_panel: PanelContainer
-var warn_label: Label
 var collect_btn: Button
 var floor_btns: Array = []
 var strip_box: BoxContainer
@@ -271,21 +269,6 @@ func _build_overlay() -> Control:
 	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
 	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
-	# cảnh báo hết nguyên liệu
-	warn_panel = PanelContainer.new()
-	warn_panel.add_theme_stylebox_override("panel", UIKit.flat_pad(Color(0.71, 0.33, 0.25, 0.94), 8))
-	warn_panel.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	warn_panel.offset_top = 10
-	warn_panel.offset_bottom = 54
-	warn_panel.offset_left = 10
-	warn_panel.offset_right = -320
-	warn_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	warn_label = UIKit.label("", 11, Color.WHITE)
-	warn_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	warn_panel.add_child(warn_label)
-	warn_panel.visible = false
-	overlay.add_child(warn_panel)
-
 	# chọn khu (bên phải)
 	var floor_col := VBoxContainer.new()
 	floor_col.set_anchors_preset(Control.PRESET_CENTER_RIGHT)
@@ -381,13 +364,22 @@ func _build_overlay() -> Control:
 
 
 func _build_dock() -> Control:
-	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", UIKit.flat_pad(Color.WHITE, 10, 0, Color.WHITE, 0))
+	# Cùng tông với bảng nâng cấp mở ra khi chạm quầy bếp: nền xanh đen, thẻ bo
+	# góc, nút xanh lá phát sáng.
+	var panel := UIKit.dark_panel(UIKit.D_BG, 8, 0)
 	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 8)
+	v.add_theme_constant_override("separation", int(UIKit.px(6)))
 	panel.add_child(v)
 
 	panel.custom_minimum_size = Vector2(372, 0)
+
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", int(UIKit.px(8)))
+	v.add_child(head)
+	head.add_child(UIIcon.make("seat", UIKit.px(18), UIKit.D_TITLE))
+	var head_l := UIKit.label("CÁC QUẦY", 14, UIKit.D_TITLE)
+	head_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(head_l)
 
 	# cột quầy của khu đang xem: xem cấp, tiến độ và nâng cấp bằng một chạm
 	var strip_scroll := ScrollContainer.new()
@@ -404,18 +396,18 @@ func _build_dock() -> Control:
 	row.add_theme_constant_override("separation", 8)
 	v.add_child(row)
 
-	collect_btn = UIKit.button_primary("THU TIỀN", 15)
-	collect_btn.custom_minimum_size = Vector2(0, 72)
+	collect_btn = UIKit.dark_button("THU TIỀN", UIKit.NEON_GREEN, Color("06301a"), 15)
+	collect_btn.custom_minimum_size = Vector2(0, UIKit.px(46))
 	collect_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	collect_btn.pressed.connect(_on_collect_all)
 	row.add_child(collect_btn)
 
-	furni_btn = UIKit.button_gold("BÀN GHẾ", 13)
-	furni_btn.custom_minimum_size = Vector2(150, 72)
+	furni_btn = UIKit.dark_button("BÀN GHẾ", UIKit.NEON_GOLD, Color("40300a"), 13)
+	furni_btn.custom_minimum_size = Vector2(UIKit.px(100), UIKit.px(46))
 	furni_btn.pressed.connect(_show_furniture_card)
 	row.add_child(furni_btn)
 
-	var hint := UIKit.label("Chạm quầy · vuốt ngang đổi khu · hai ngón để kéo và thu phóng", 9, UIKit.N600)
+	var hint := UIKit.label("Chạm quầy · vuốt ngang đổi khu · hai ngón để kéo và thu phóng", 9, UIKit.D_MUTED)
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	v.add_child(hint)
@@ -470,16 +462,6 @@ func _refresh_tags() -> void:
 	for it in items:
 		tag_box.add_child(UIKit.label("·", 10, UIKit.D_LINE))
 		tag_box.add_child(UIKit.label(str(it["text"]).to_upper(), 10, it["color"]))
-
-	var missing := GameManager.missing_ingredients()
-	if missing.is_empty():
-		warn_panel.visible = false
-	else:
-		var names: Array = []
-		for id in missing:
-			names.append(str(GameManager.INGREDIENTS[id]["name"]))
-		warn_label.text = "Hết " + ", ".join(names).to_lower() + " — vào Mua sắm để nhập thêm."
-		warn_panel.visible = true
 
 
 func _refresh_floor_buttons() -> void:
@@ -544,7 +526,7 @@ func _rebuild_strip() -> void:
 
 	var fid := str(GameManager.FLOORS[strip_floor]["id"])
 	if not GameManager.is_floor_unlocked(fid):
-		var note := UIKit.muted("Khu này chưa mở — chạm vào bảng ngoài lô đất để mở khoá.", 12)
+		var note := UIKit.label("Khu này chưa mở — chạm vào bảng ngoài lô đất để mở khoá.", 12, UIKit.D_MUTED)
 		note.custom_minimum_size = Vector2(0, 0)
 		note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		strip_box.add_child(note)
@@ -556,34 +538,55 @@ func _rebuild_strip() -> void:
 
 func _strip_card(sid: String) -> Control:
 	var data: Dictionary = GameManager.STATIONS[sid]
-	var card := UIKit.card(8)
-	card.custom_minimum_size = Vector2(0, 74)
+	var card := UIKit.dark_panel(UIKit.D_CARD, 8, UIKit.RADIUS_SM)
+	card.custom_minimum_size = Vector2(0, UIKit.px(52))
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
 	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 4)
+	v.add_theme_constant_override("separation", int(UIKit.px(4)))
 	card.add_child(v)
 
 	var top := HBoxContainer.new()
-	top.add_theme_constant_override("separation", 5)
+	top.add_theme_constant_override("separation", int(UIKit.px(5)))
 	v.add_child(top)
-	var nm := UIKit.label(str(data["name"]), 12, UIKit.TEXT)
+	top.add_child(UIIcon.make(_station_icon(sid), UIKit.px(16), UIKit.D_MUTED))
+	var nm := UIKit.label(str(data["name"]), 12, UIKit.D_TEXT)
 	nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	nm.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	nm.clip_text = true
 	top.add_child(nm)
-	var lv := UIKit.label("", 12, UIKit.PRIMARY)
+
+	# dấu chấm than cam: quầy này hết nguyên liệu, nó phập phồng cho dễ thấy
+	var alert := UIKit.label("!", 17, UIKit.WARN)
+	alert.custom_minimum_size = Vector2(UIKit.px(16), 0)
+	alert.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	alert.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	alert.pivot_offset = Vector2(UIKit.px(8), UIKit.px(11))
+	alert.visible = false
+	top.add_child(alert)
+
+	var lv := UIKit.label("", 12, UIKit.NEON_BLUE)
 	top.add_child(lv)
 
-	var bar := UIKit.bar(0.0, UIKit.OK, 6)
+	var bar := UIKit.bar(0.0, UIKit.NEON_GREEN, 5)
+	bar.get_theme_stylebox("background").bg_color = UIKit.D_BG
 	v.add_child(bar)
 
 	# Dải này chỉ để NGÓ tình trạng. Muốn nâng cấp thì chạm vào quầy trong quán,
 	# bảng nâng cấp mở ra ở đó.
-	var note := UIKit.muted("", 11)
+	var note := UIKit.label("", 11, UIKit.D_MUTED)
 	v.add_child(note)
 
-	strip_cards[sid] = {"lv": lv, "bar": bar, "note": note}
+	# Hết nguyên liệu thì nhập ngay tại đây, khỏi lặn lội sang màn Mua sắm.
+	# Nhập xong quầy hết thiếu nên nút tự biến mất.
+	var buy := UIKit.dark_button("", UIKit.WARN, Color("3d2402"), 12)
+	buy.custom_minimum_size = Vector2(0, UIKit.px(32))
+	buy.visible = false
+	buy.pressed.connect(_on_strip_restock.bind(sid))
+	v.add_child(buy)
+
+	strip_cards[sid] = {"lv": lv, "bar": bar, "note": note, "alert": alert,
+		"card": card, "buy": buy}
 	return card
 
 
@@ -599,13 +602,76 @@ func _sync_strip() -> void:
 		(r["lv"] as Label).text = "C%d" % GameManager.station_level(str(sid)) if open else "—"
 		(r["bar"] as ProgressBar).value = float(GameManager.progress.get(sid, 0.0)) * 100.0
 		var note: Label = r["note"]
+		var alert: Label = r["alert"]
+		var short := open and not GameManager.has_ingredients(str(sid), 1)
+		alert.visible = short
+		if short:
+			# nhịp thở: vừa to nhỏ vừa mờ tỏ, đủ để mắt bắt được ở góc màn hình
+			var t := Time.get_ticks_msec() / 1000.0 * 4.4
+			var k := 0.5 + 0.5 * sin(t)
+			alert.scale = Vector2.ONE * (0.9 + 0.35 * k)
+			alert.modulate.a = 0.45 + 0.55 * k
+		var buy: Button = r["buy"]
+		var need: Array = _restock_list(str(sid)) if short else []
+		buy.visible = not need.is_empty()
+		if buy.visible:
+			var cost := _restock_cost(need)
+			buy.text = "MUA NGAY · %s ₫" % UIKit.money_short(cost)
+			buy.disabled = not GameManager.can_afford(cost)
 		if not open:
 			note.text = "chưa mở"
+		elif short:
+			note.text = "hết nguyên liệu"
+			note.add_theme_color_override("font_color", UIKit.WARN)
 		else:
 			# đang chờ bán bao nhiêu phần + tiền đang nằm ở quầy
 			var waiting := int(GameManager.pending_portions.get(sid, 0.0))
 			var cash := float(GameManager.pending.get(sid, 0.0))
 			note.text = "%d phần chờ · %s ₫" % [waiting, UIKit.money_short(cash)]
+			note.add_theme_color_override("font_color", UIKit.D_MUTED)
+
+
+## Những thứ cần nhập để quầy này chạy lại. Sườn nướng sẵn không bán ngoài chợ
+## nên thiếu nó thì nhập sườn sống và than cho lò vỉa hè.
+func _restock_list(sid: String) -> Array:
+	var recipe: Dictionary = GameManager.STATIONS[sid]["recipe"]
+	var out: Array = []
+	for ing in recipe:
+		if float(GameManager.stock.get(ing, 0.0)) >= float(recipe[ing]):
+			continue
+		if bool(GameManager.INGREDIENTS[ing].get("shop", true)):
+			if not out.has(str(ing)):
+				out.append(str(ing))
+		else:
+			for feed in ["pork", "coal"]:
+				var d: Dictionary = GameManager.INGREDIENTS[feed]
+				if float(GameManager.stock.get(feed, 0.0)) < float(d["pack"]) and not out.has(feed):
+					out.append(feed)
+	return out
+
+
+func _restock_cost(list: Array) -> float:
+	var total := 0.0
+	for ing in list:
+		var d: Dictionary = GameManager.INGREDIENTS[ing]
+		total += float(d["price"]) * float(d["pack"])
+	return total
+
+
+func _on_strip_restock(sid: String) -> void:
+	var need := _restock_list(sid)
+	if need.is_empty():
+		return
+	if not GameManager.can_afford(_restock_cost(need)):
+		_toast("Chưa đủ tiền để nhập hàng")
+		return
+	var names: Array = []
+	for ing in need:
+		if GameManager.buy_ingredient(str(ing)):
+			names.append(str(GameManager.INGREDIENTS[ing]["name"]).to_lower())
+	if names.is_empty():
+		return
+	_toast("Đã nhập " + ", ".join(names))
 
 
 func _on_boosted(sid: String) -> void:
