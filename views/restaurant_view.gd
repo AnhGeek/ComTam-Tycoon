@@ -609,7 +609,7 @@ func _sync_strip() -> void:
 		(r["bar"] as ProgressBar).value = float(GameManager.progress.get(sid, 0.0)) * 100.0
 		var note: Label = r["note"]
 		var alert: Label = r["alert"]
-		var short := open and not GameManager.has_ingredients(str(sid), 1)
+		var short := open and not _restock_list(str(sid)).is_empty()
 		alert.visible = short
 		if short:
 			# nhịp thở: vừa to nhỏ vừa mờ tỏ, đủ để mắt bắt được ở góc màn hình
@@ -622,7 +622,7 @@ func _sync_strip() -> void:
 		if not open:
 			note.text = "chưa mở"
 		elif short:
-			note.text = "hết nguyên liệu"
+			note.text = "hết nguyên liệu" if not GameManager.has_ingredients(str(sid), 1) 				else "sắp hết hàng"
 			note.add_theme_color_override("font_color", UIKit.WARN)
 		else:
 			# đang chờ bán bao nhiêu phần + tiền đang nằm ở quầy
@@ -632,22 +632,25 @@ func _sync_strip() -> void:
 			note.add_theme_color_override("font_color", UIKit.D_MUTED)
 
 
-## Những thứ cần nhập để quầy này chạy lại. Sườn nướng sẵn không bán ngoài chợ
-## nên thiếu nó thì nhập sườn sống và than cho lò vỉa hè.
+## Những thứ cần nhập để quầy này chạy lại — cũng chính là thứ quyết định quầy
+## có bị báo động hay không.
+##
+## Sườn nướng sẵn không bán ngoài chợ mà do lò than vỉa hè nướng ra, nên quầy nào
+## ăn sườn nướng thì phải trông cả kho của lò: hết sườn sống hay hết than là báo
+## ngay, khỏi đợi tới lúc quầy sạch sườn mới biết.
 func _restock_list(sid: String) -> Array:
 	var recipe: Dictionary = GameManager.STATIONS[sid]["recipe"]
 	var out: Array = []
 	for ing in recipe:
-		if float(GameManager.stock.get(ing, 0.0)) >= float(recipe[ing]):
+		if not bool(GameManager.INGREDIENTS[ing].get("shop", true)):
 			continue
-		if bool(GameManager.INGREDIENTS[ing].get("shop", true)):
-			if not out.has(str(ing)):
-				out.append(str(ing))
-		else:
-			for feed in ["pork", "coal"]:
-				var d: Dictionary = GameManager.INGREDIENTS[feed]
-				if float(GameManager.stock.get(feed, 0.0)) < float(d["pack"]) and not out.has(feed):
-					out.append(feed)
+		if float(GameManager.stock.get(ing, 0.0)) < float(recipe[ing]):
+			out.append(str(ing))
+	if recipe.has("grilled"):
+		if float(GameManager.stock.get("pork", 0.0)) < float(GameManager.grill_batch()):
+			out.append("pork")
+		if float(GameManager.stock.get("coal", 0.0)) < GameManager.GRILL_COAL and not out.has("coal"):
+			out.append("coal")
 	return out
 
 

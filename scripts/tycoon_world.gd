@@ -796,6 +796,33 @@ func _seat_style(kind: String) -> String:
     return "stool" if kind == "stool_set" else "chair"
 
 
+## Mặt bàn của mỗi bộ cao bao nhiêu — để đặt dĩa nằm đúng trên mặt gỗ.
+func _table_top(kind: String) -> float:
+    match kind:
+        "stool_set":
+            return 0.47
+        "table_steel":
+            return 0.76
+        "table_wood":
+            return 0.805
+        _:
+            return 0.77
+
+
+## Nửa chiều bày biện của mặt bàn: dĩa kéo vào trong chừng này thì còn nằm gọn
+## trên bàn chứ không lơ lửng ngoài mép.
+func _table_reach(kind: String) -> Vector2:
+    match kind:
+        "stool_set":
+            return Vector2(0.28, 0.28)
+        "table_steel":
+            return Vector2(0.42, 0.42)
+        "table_wood":
+            return Vector2(0.9, 0.3)
+        _:
+            return Vector2(0.38, 0.38)
+
+
 ## Dựng phần nhìn thấy của một bộ bàn ghế tại gốc toạ độ của `holder`.
 func _build_furniture_body(holder: Node3D, kind: String) -> void:
     match kind:
@@ -878,11 +905,17 @@ func _build_placed(node: Node3D, index: int) -> void:
         (_tables[index] as Array).append(centre)
         var tid := (_tables[index] as Array).size() - 1
         var style := _seat_style(kind)
+        var top := _table_top(kind)
+        var reach := _table_reach(kind)
         for o in offs:
-            var ro: Vector2 = o.rotated(holder.rotation.y)
-            _seats.append({"pos": Vector3(centre.x + ro.x * 1.02, y, centre.z + ro.y * 1.02),
+            var ro: Vector2 = o.rotated(holder.rotation.y) * 1.02
+            # dĩa kéo từ chỗ ngồi vào trong mặt bàn, ngay tầm tay người đó
+            var po := Vector2(clampf(o.x, -reach.x, reach.x),
+                clampf(o.y, -reach.y, reach.y)).rotated(holder.rotation.y)
+            _seats.append({"pos": Vector3(centre.x + ro.x, y, centre.z + ro.y),
                 "look": centre, "floor": index, "taken": false, "style": style, "out": out,
-                "y": y, "table": tid})
+                "y": y, "table": tid, "plate": Vector3(centre.x + po.x, y + top, centre.z + po.y),
+                "plate_yaw": atan2(ro.x - po.x, ro.y - po.y)})
 
 
 func _build_table(node: Node3D, spot: Vector2, index: int) -> void:
@@ -897,9 +930,13 @@ func _build_table(node: Node3D, spot: Vector2, index: int) -> void:
     # bốn ghế quanh bàn: mở tầng là thêm đúng 4 chỗ như lời hứa ở thẻ mở tầng
     for d in [Vector2(-0.75, 0), Vector2(0.75, 0), Vector2(0, -0.75), Vector2(0, 0.75)]:
         _cylinder(node, 0.21, 0.17, 0.4, C_HOT if d.x > 0.0 else C_STEEL, spot.x + d.x, 0.2, spot.y + d.y, 12)
-        _seats.append({"pos": Vector3(spot.x + d.x * 1.05, 0, spot.y + d.y * 1.05),
+        var sv: Vector2 = d * 1.05
+        var pv: Vector2 = d * 0.5
+        _seats.append({"pos": Vector3(spot.x + sv.x, 0, spot.y + sv.y),
             "look": Vector3(spot.x, 0, spot.y), "floor": index, "taken": false,
-            "style": "chair", "out": false, "y": 0.0, "table": tid})
+            "style": "chair", "out": false, "y": 0.0, "table": tid,
+            "plate": Vector3(spot.x + pv.x, 0.77, spot.y + pv.y),
+            "plate_yaw": atan2(sv.x - pv.x, sv.y - pv.y)})
 
 
 func _build_decor(node: Node3D, index: int, accent: Color) -> void:
@@ -1197,10 +1234,14 @@ func _populate(node: Node3D, fid: String, index: int) -> void:
         var spawn := _spawn_point(index, i)
         ch2.position = spawn
         node.add_child(ch2)
+        # dĩa cơm tấm của riêng người này: treo sẵn ở tầng, bưng ra mới hiện
+        var plate := ComTamChars.build_com_tam_plate()
+        plate.visible = false
+        node.add_child(plate)
         _actors.append({"node": ch2, "rig": rig2, "mode": "customer", "key": key,
             "floor": index, "state": "enter", "t": -float(i) * 0.9, "seat": null,
             "slot": i, "spawn": spawn, "y": spawn.y, "path": [], "chatty": i % 3 == 0,
-            "meal": ComTamChars.attach_meal(rig2), "phase": randf() * 2.0,
+            "meal": ComTamChars.attach_meal(rig2), "phase": randf() * 2.0, "plate": plate,
             "meter": _make_meter(ch2, 2.25, 0.24, C_NO, C_NO)})
 
 
@@ -1447,6 +1488,24 @@ func _guest_spot(g: Dictionary) -> Vector3:
     return node.position
 
 
+## Bày dĩa cơm tấm xuống trước mặt khách (hoặc dọn đi khi khách rời bàn).
+func _show_plate(g: Dictionary, on: bool) -> void:
+    var plate = g.get("plate")
+    if plate == null or not is_instance_valid(plate as Node):
+        return
+    var node: Node3D = plate
+    node.visible = on
+    if not on:
+        return
+    var seat = g.get("seat")
+    if seat == null:
+        node.visible = false
+        return
+    var sd: Dictionary = seat
+    node.position = sd.get("plate", Vector3(0, 0.77, 0))
+    node.rotation.y = float(sd.get("plate_yaw", 0.0))
+
+
 ## Người này còn ngồi đó chờ không (có thể đã bỏ về lúc mình đang đi tới).
 func _guest_waiting(guest) -> bool:
     if guest == null:
@@ -1463,6 +1522,7 @@ func _serve_guest(guest) -> void:
     g["state"] = "eat"
     g["t"] = 0.0
     g["booked"] = false
+    _show_plate(g, true)
     _set_meter(g.get("meter"), 0.0, false)
 
 
@@ -1613,6 +1673,7 @@ func _update_customer(a: Dictionary, node: Node3D, rig: Dictionary, t: float, de
                 var lost := GameManager.customer_gave_up(str(a.get("key", "")))
                 spawn_float("-%d uy tín" % lost, node.global_position + Vector3(0, 1.9, 0), C_NO)
                 _set_meter(a.get("meter"), 0.0, false)
+                _show_plate(a, false)
                 ComTamChars.stand_up(rig)
                 seat_w["taken"] = false
                 a["seat"] = null
@@ -1635,6 +1696,7 @@ func _update_customer(a: Dictionary, node: Node3D, rig: Dictionary, t: float, de
                 spawn_float("+%d uy tín" % gained,
                     node.global_position + Vector3(0, 1.9, 0), C_OK)
                 _set_meter(a.get("meter"), 0.0, false)
+                _show_plate(a, false)
                 ComTamChars.stand_up(rig)
                 (meal["bowl"] as Node3D).visible = false
                 (meal["sticks"] as Node3D).visible = false

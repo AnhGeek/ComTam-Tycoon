@@ -540,6 +540,64 @@ static func attach_meal(rig: Dictionary) -> Dictionary:
 	return {"bowl": bowl, "sticks": sticks}
 
 
+# ---------- Dĩa cơm tấm bày trên bàn ----------
+const RICE_COL := Color8(0xfa, 0xf6, 0xea)
+const RIB_COL := Color8(0x8f, 0x4c, 0x24)
+const RIB_CHAR := Color8(0x5d, 0x2c, 0x14)
+const SCALLION := Color8(0x6f, 0xb0, 0x4a)
+const PICKLE_CARROT := Color8(0xff, 0x9c, 0x3d)
+const PICKLE_RADISH := Color8(0xf3, 0xe9, 0xd2)
+const CUCUMBER := Color8(0x9a, 0xcf, 0x6a)
+const TOMATO := Color8(0xe3, 0x4b, 0x3a)
+const NUOC_MAM := Color8(0xd9, 0x8a, 0x2b)
+const PLATE_COL := Color8(0xfc, 0xfd, 0xff)
+
+
+## Dĩa cơm tấm sườn đặt trên bàn: cơm, miếng sườn nướng, mỡ hành, đồ chua,
+## dưa leo cà chua, chén nước mắm và đôi đũa. Dĩa quay mặt sườn về phía khách
+## (hướng +Z của node), nên chỉ cần xoay node là bày đúng chiều cho người ngồi.
+static func build_com_tam_plate() -> Node3D:
+	var d := Node3D.new()
+	# dĩa sứ: vành hơi loe cho ra dáng dĩa chứ không phải cái đĩa lót
+	d.add_child(_mi(_cyl(0.175, 0.15, 0.016, 16), mat(PLATE_COL, 0.35), 0, 0.008, 0))
+	d.add_child(_mi(_cyl(0.15, 0.15, 0.006, 16), mat(Color8(0xe8, 0xec, 0xf2), 0.35), 0, 0.018, 0))
+
+	# cơm tấm: gò cơm nửa cầu phía sau, rắc chút mỡ hành xanh lên trên
+	d.add_child(_mi(_sph(0.082, true), mat(RICE_COL, 0.85), -0.035, 0.019, -0.035))
+	for g in [Vector3(-0.06, 0.072, -0.05), Vector3(-0.02, 0.078, -0.03),
+			Vector3(-0.05, 0.066, -0.005)]:
+		d.add_child(_mi(_bx(0.028, 0.008, 0.012), mat(SCALLION, 0.8), g.x, g.y, g.z))
+
+	# miếng sườn nướng nằm phía trước, mặt trên sém cạnh
+	var rib := Node3D.new()
+	rib.position = Vector3(0.045, 0.022, 0.045)
+	rib.rotation.y = -0.35
+	rib.add_child(_mi(_bx(0.15, 0.028, 0.105), mat(RIB_COL, 0.6)))
+	rib.add_child(_mi(_bx(0.12, 0.008, 0.08), mat(RIB_CHAR, 0.55), 0, 0.017, 0))
+	d.add_child(rib)
+
+	# đồ chua + dưa leo, cà chua xếp một bên cho dĩa có màu
+	d.add_child(_mi(_bx(0.055, 0.012, 0.014), mat(PICKLE_CARROT, 0.7), -0.085, 0.027, 0.055))
+	d.add_child(_mi(_bx(0.055, 0.012, 0.014), mat(PICKLE_RADISH, 0.7), -0.09, 0.027, 0.078))
+	d.add_child(_mi(_cyl(0.035, 0.035, 0.008, 10), mat(CUCUMBER, 0.6), 0.115, 0.026, -0.055))
+	d.add_child(_mi(_cyl(0.032, 0.032, 0.008, 10), mat(TOMATO, 0.6), 0.135, 0.026, -0.005))
+
+	# chén nước mắm nhỏ để cạnh dĩa
+	var cup := Node3D.new()
+	cup.position = Vector3(0.215, 0.0, 0.11)
+	cup.add_child(_mi(_cyl(0.048, 0.032, 0.032, 12), mat(PLATE_COL, 0.35), 0, 0.016, 0))
+	cup.add_child(_mi(_cyl(0.042, 0.042, 0.005, 12), mat(NUOC_MAM, 0.3), 0, 0.028, 0))
+	d.add_child(cup)
+
+	# đôi đũa gác bên phải dĩa, đầu chĩa về phía khách
+	for sx in [-0.014, 0.014]:
+		var st := _mi(_bx(0.008, 0.008, 0.24), mat(Color8(0xd9, 0xb0, 0x76), 0.7),
+			-0.235 + sx, 0.006, 0.02)
+		st.rotation.y = 0.12
+		d.add_child(st)
+	return d
+
+
 ## Trả tư thế về đứng thẳng (sau khi rời ghế).
 static func stand_up(rig: Dictionary) -> void:
 	rig["root"].position.y = 0.0
