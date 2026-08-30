@@ -672,13 +672,19 @@ func _sync_buy_row(r: Dictionary, need: Array) -> void:
 		b.disabled = not GameManager.can_afford(_pack_cost(str(b.get_meta("ing"))))
 
 
-## Nút nhỏ: tên món + giá một bao.
+## Nút nhỏ: tên món + giá một bao. Lề trong bóp lại cho cả hàng nằm gọn trên
+## dòng trạng thái — quầy lò cần tới bốn thứ mà thẻ vẫn không cao thêm.
 func _buy_chip(ing: String) -> Button:
 	var d: Dictionary = GameManager.INGREDIENTS[ing]
-	var b := UIKit.dark_button("%s · %s" % [str(d["name"]).split(" ")[0],
-		UIKit.money_short(_pack_cost(ing))], UIKit.WARN, Color("3d2402"), 10, 8)
-	b.custom_minimum_size = Vector2(0, UIKit.px(22))
-	b.add_theme_constant_override("h_separation", 0)
+	var b := UIKit.dark_button("%s %s" % [str(d["name"]).split(" ")[0],
+		UIKit.money_short(_pack_cost(ing))], UIKit.WARN, Color("3d2402"), 9, 6)
+	b.custom_minimum_size = Vector2(0, UIKit.px(19))
+	for st in ["normal", "hover", "pressed", "disabled"]:
+		var sb := b.get_theme_stylebox(st) as StyleBoxFlat
+		sb.content_margin_left = UIKit.px(5)
+		sb.content_margin_right = UIKit.px(5)
+		sb.content_margin_top = UIKit.px(1)
+		sb.content_margin_bottom = UIKit.px(1)
 	b.set_meta("ing", ing)
 	b.pressed.connect(_on_buy_chip.bind(ing))
 	return b
