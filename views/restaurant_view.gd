@@ -686,11 +686,17 @@ func _buy_chip(ing: String) -> Button:
 		sb.content_margin_top = UIKit.px(1)
 		sb.content_margin_bottom = UIKit.px(1)
 	b.set_meta("ing", ing)
-	b.pressed.connect(_on_buy_chip.bind(ing))
+	# Kéo danh sách mà ngón đặt trúng nút thì nút vẫn nhận cú bấm, thành ra mua
+	# nhầm. Nhớ chỗ đặt ngón, nhả tay xa quá thì coi như chỉ cuộn.
+	b.button_down.connect(func(): b.set_meta("down_at", b.get_global_mouse_position()))
+	b.pressed.connect(_on_buy_chip.bind(b, ing))
 	return b
 
 
-func _on_buy_chip(ing: String) -> void:
+func _on_buy_chip(b: Button, ing: String) -> void:
+	var down_at: Vector2 = b.get_meta("down_at", b.get_global_mouse_position())
+	if down_at.distance_to(b.get_global_mouse_position()) > UIKit.px(20):
+		return
 	var d: Dictionary = GameManager.INGREDIENTS[ing]
 	if not GameManager.can_afford(_pack_cost(ing)):
 		_toast("Chưa đủ tiền nhập " + str(d["name"]).to_lower())

@@ -37,8 +37,10 @@ const INGREDIENTS := {
     "bi": {"name": "Bì heo", "unit": "phần", "price": 6000, "pack": 50},
     "cha": {"name": "Chả trứng", "unit": "miếng", "price": 10000, "pack": 50},
     "veg": {"name": "Đồ chua · rau", "unit": "hũ", "price": 3000, "pack": 50},
-    "tea": {"name": "Trà · đá", "unit": "bình", "price": 5000, "pack": 50},
+    "tea": {"name": "Trà", "unit": "bình", "price": 5000, "pack": 50},
+    "ice": {"name": "Đá bi lạnh", "unit": "bao", "price": 3000, "pack": 50},
     "coal": {"name": "Than đá", "unit": "bao", "price": 24000, "pack": 20},
+    "gas": {"name": "Gas", "unit": "bình", "price": 12000, "pack": 20},
     ## Sườn nướng sẵn không mua được ngoài chợ: phải tự nướng ở lò than vỉa hè.
     "grilled": {"name": "Sườn nướng sẵn", "unit": "miếng", "price": 19000, "pack": 0,
         "shop": false},
@@ -56,16 +58,16 @@ static func shop_ingredients() -> Array:
 ## Mỗi quầy = một món; vị trí trong không gian 3D do TycoonWorld tự xếp theo khu.
 const STATIONS := {
     "grill": {"floor": "street", "name": "Lò nướng sườn", "dish": "Cơm tấm sườn", "glyph": "▤",
-        "recipe": {"rice": 1, "grilled": 1, "veg": 1}, "base_price": 45000, "cycle": 12.0,
+        "recipe": {"grilled": 1, "coal": 1}, "base_price": 45000, "cycle": 12.0,
         "batch": 2, "up_cost": 120000},
     "rice": {"floor": "street", "name": "Nồi cơm tấm", "dish": "Cơm tấm trứng", "glyph": "▦",
-        "recipe": {"rice": 1, "egg": 2}, "base_price": 35000, "cycle": 10.0,
+        "recipe": {"rice": 1, "gas": 1}, "base_price": 35000, "cycle": 10.0,
         "batch": 2, "up_cost": 90000},
     "prep": {"floor": "street", "name": "Bàn bì & chả", "dish": "Cơm tấm bì chả", "glyph": "▩",
-        "recipe": {"rice": 1, "bi": 1, "cha": 1}, "base_price": 50000, "cycle": 15.0,
+        "recipe": {"egg": 1, "bi": 1}, "base_price": 50000, "cycle": 15.0,
         "batch": 2, "up_cost": 160000},
     "drink": {"floor": "street", "name": "Quầy trà đá", "dish": "Trà đá · nước sâm", "glyph": "▥",
-        "recipe": {"tea": 1}, "base_price": 10000, "cycle": 8.0,
+        "recipe": {"ice": 1, "tea": 1}, "base_price": 10000, "cycle": 8.0,
         "batch": 3, "up_cost": 60000},
 
     "combo": {"floor": "aircon", "name": "Bàn cơm phần", "dish": "Cơm tấm thập cẩm", "glyph": "▣",
