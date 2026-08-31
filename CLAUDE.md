@@ -38,6 +38,11 @@ nút trong game đổi thành "ĐÃ TỐI ĐA". `up_cost` và `chung.station_up_
 là đường lui khi mảng thiếu số. Giá mở khu (`floors.<id>.cost`) là khoản trả một
 lần, không dính gì tới cấp.
 
+**Nhập nhanh:** nút "NHẬP NHANH CHO ĐẦY KHO" (`buy_all_low()`) nhập xoay vòng mỗi
+lượt một lố, món cạn nhất đi trước, cho tới khi đầy hoặc hết tiền — món nào đã đầy
+thì bỏ qua chứ không chặn mấy món còn thiếu. Mốc đầy là `stock_target()`: đồ tươi
+lấy theo `cold_capacity()`, đồ khô lấy `chung.dry_stock_target`.
+
 `GameManager._load_balance()` đọc file này lúc khởi động rồi **ghi đè** lên số mặc
 định khai báo trong `scripts/game_manager.gd`. Thiếu khoá nào thì khoá đó giữ số
 mặc định, nên file JSON chỉ cần ghi phần muốn sửa. File hỏng cú pháp thì bỏ qua cả
@@ -148,6 +153,91 @@ hết hàng: lò nướng thịt, nồi cơm tấm, bàn bì & chả, quầy tr�
 có ba lộ trình nâng cấp tách bạch: cấp quầy (cơm ra nhanh hơn), lò nướng than
 (nhiều miếng mỗi mẻ), lò giữ nhiệt (nhiều chỗ chứa hơn). Số miếng thấy trong khay
 (tối đa `WARM_SLOTS` ô) luôn khớp với số miếng thật trong kho.
+
+### Mua sắm quản lý theo khu
+
+Trang Mua sắm có hàng nút chọn khu nằm ngay dưới hàng tab (`shop_floor` trong
+`views/shopping_view.gd`), dùng chung cho tab **Nhân viên** và **Trang trí** —
+mua gì cũng là mua cho khu đang chọn. Tab **Nguyên liệu** không có nút chọn khu
+vì kho hàng dùng chung cả 3 khu.
+
+Trong `GameManager`, `staff` và `decor` đều là `floor_id -> {id -> số lượng}`.
+Tra cứu qua `staff_count(fid, id)` · `staff_total(id)` · `floor_crew(fid)` ·
+`floor_salary(fid)` · `hire_cost(id, fid)`, thuê bằng `hire_staff(id, fid)`.
+`STAFF[id]["max"]` và `["cost"]` tính cho **mỗi khu**, không phải cả quán.
+
+**Chỉ còn hai loại nhân viên, mỗi khu nhiều nhất 2 người mỗi loại** — mà **1
+người là có sẵn lúc mở khu**, nên chỉ thuê thêm được đúng 1 người nữa:
+
+- `STAFF[id]["max"]` = **tổng** người của một khu (2), `["free"]` = số người đi
+  kèm khi mở khu (1). Cả hai chỉnh được trong `balance.json`.
+- `staff[fid][id]` chỉ ghi số **thuê thêm**. Người có sẵn không lưu vào save,
+  `staff_free(fid, id)` suy thẳng từ "khu này mở chưa" — nhờ vậy game mới chơi
+  và khu vừa mở là có người ngay, khỏi phải nhớ cập nhật chỗ nào.
+- `staff_count(fid, id)` = có sẵn + thuê thêm, và **mọi chỗ tính tác dụng đều
+  hỏi hàm này** (ghế, khách tới, `serve_ratio`, số người dựng trong cảnh 3D).
+  Muốn biết riêng phần thuê thì hỏi `staff_hired(fid, id)`; `hire_left(fid, id)`
+  cho biết còn thuê thêm được mấy người.
+- **Lương chỉ trả cho người thuê thêm** (`floor_salary` dùng `staff_hired`) —
+  người đi kèm khu làm không công, nên số người và tiền lương lệch nhau là đúng.
+
+Cả hai loại đều chỉ lo cho khu mình, và thuê ai là thấy ngay người đó ngoài
+quán — không có loại nào chỉ là con số:
+
+- **Phục vụ** — mỗi người là **một người bưng cơm thật** đứng trước quầy khu đó
+  (`_populate` dựng đúng `staff_count(fid, "waiter")` người, tên lấy lần lượt
+  trong `SERVER_KEYS`), cộng 2 chỗ ngồi (`floor_seats(fid)`).
+  `service_time(fid)` là quãng chờ của MỘT người bưng nên không hỏi tới nhân
+  viên: đông người thì nhiều khay chạy song song, chứ người cũ không chạy nhanh
+  hơn. Mỗi người đeo vòng chờ món của riêng mình trong `a["meter"]`.
+- **Shipper** — kéo thêm 6% khách về khu (`floor_arrival_rate(fid)`), và ra
+  đứng chờ hộp cơm ở quầy rồi chạy ra chạy vào suốt ngày (`_update_shipper`:
+  `load → go → away → back`, dùng chung `_route`/`_follow_path`/`_spawn_point`
+  với khách; lúc `away` thì tắt node cho nhẹ máy).
+
+**Phụ bếp và thu ngân đã bỏ hẳn** (cả `STAFF` lẫn `staff.cook`/`staff.cashier`
+trong `balance.json`): `station_cycle` giờ chỉ còn phụ thuộc cấp quầy, và
+`revenue_multiplier()` biến mất luôn — tiền bán ra chỉ còn `giá × số phần`, ở cả
+`_tick`, `_apply_offline` lẫn phần tính lãi mỗi giây. Save đời cũ có ghi hai loại
+này thì lúc load tự rơi mất vì vòng load chỉ đọc các khoá còn trong `STAFF`.
+
+`staff_total()` chỉ còn để hiện con số "cả quán có mấy người" trên trang Mua sắm.
+
+Vì vậy mấy con số của quán đều có bản theo khu và bản cộng dồn:
+`floor_seats/seats` · `floor_ambiance/ambiance` · `floor_arrival_rate/arrival_rate`.
+Hàm cộng dồn chỉ để hiện lên HUD; phần tính tiền trong `_tick` và số khách dựng
+trong cảnh 3D đều hỏi bản **theo khu**.
+
+**Quản lý** thuê cho từng quầy (`hire_manager(sid)` · `has_manager(sid)`), mà quầy
+nào cũng thuộc một khu nên `floor_managers(fid)` đếm được khu đó có ai trông.
+Khu nào đã thuê quản lý thì `_build_manager` dựng một người mặc vest ra đứng phía
+trước quán — **chỉ đứng im** nhìn quán (actor `mode = "boss"`, chạy `idle`), không
+đi lại, không bưng bê. Nam mặc vest sơ mi cà vạt (`quan_nam`), nữ mặc vest với váy
+bút chì (`quan_nu`); trong `ComTamChars.build()` là hai khoá `"suit"` và `"skirt"`
+của preset — mặc váy thì ống chân đổi sang màu da.
+
+Save đời cũ ghi `staff` phẳng thì lúc load dồn hết về khu đầu, y như cách trang
+trí đã làm.
+
+### Kho lạnh (tủ lạnh)
+
+Bốn món tươi trong `COLD_ITEMS` (sườn, trứng, bì, chả) **có trần kho**, mấy thứ
+khô (gạo, than, gas...) thì không. Trần đó là `cold_capacity()` =
+`FRIDGE_CAP_BASE` cộng phần góp của mọi khu, mỗi khu góp
+`số tủ × (FRIDGE_SLOT + (cấp − 1) × FRIDGE_SLOT_STEP)`.
+
+Tủ lạnh theo đúng luật "mỗi khu lo phần khu mình": `fridges[fid]` là số tủ,
+`fridge_levels[fid]` là cấp của khu đó, mua bằng `buy_fridge(fid)` (cái sau đắt
+hơn cái trước theo `FRIDGE_COST_MULT`, nhiều nhất `FRIDGE_MAX` cái một khu) và
+nâng bằng `upgrade_fridge(fid)` (25 cấp, giá từng cấp ở `fridge.up_costs` trong
+`balance.json`). Nhưng **chỗ trữ thì góp chung**, vì kho nguyên liệu xưa giờ vẫn
+là kho chung của cả quán.
+
+`buy_ingredient()` tự cắt bớt số lượng cho vừa chỗ còn trống và chỉ tính tiền
+phần nhét vô được; kho đầy thì trả `false`. Vách trái mỗi khu bày được **hai**
+cái tủ (`_build_fridges`), cái thứ ba mua rồi vẫn tính chỗ trữ nhưng không dựng
+ra cho đỡ chật. Tab **Kho lạnh** trong Mua sắm dùng chung nút chọn khu với hai
+tab kia.
 
 ### `tycoon_world.gd` — vài quy ước
 

@@ -3,7 +3,7 @@
 		"Bảng số của game: sửa file này rồi chạy install.sh là ra APK mới, khỏi đụng code.",
 		"Thiếu khoá nào thì khoá đó giữ số mặc định trong scripts/game_manager.gd.",
 		"",
-		"GIÁ TỪNG CẤP: mỗi thứ nâng cấp được (mọi quầy, lò than, lò giữ nhiệt) có mảng",
+		"GIÁ TỪNG CẤP: mỗi thứ nâng cấp được (mọi quầy, lò than, lò giữ nhiệt, tủ lạnh) có mảng",
 		"  up_costs đúng 25 số, ứng với 25 cấp. Số thứ k là giá để ĐẠT cấp k, nên số đầu",
 		"  tiên là 0 (cấp 1 có sẵn lúc mở quầy) và số cuối là giá lên cấp 25. Sửa thẳng",
 		"  từng số trong mảng là đổi được giá của đúng cấp đó.",
@@ -15,6 +15,9 @@
 		"  unit là chữ hiện trên màn Mua sắm (kg · bình · miếng · bao...).",
 		"floors.cost: giá mở khu — trả một lần, không có cấp.",
 		"grill: lò than vỉa hè. warmer: lò giữ nhiệt trong quầy.",
+		"fridge: tủ lạnh — mỗi khu tự mua tủ của khu mình (cost · cost_mult · max) rồi",
+		"  nâng cấp riêng (up_costs). cap_base = chỗ trữ đồ tươi khi chưa có tủ nào,",
+		"  slot = chỗ một cái tủ cấp 1 thêm vào, slot_step = mỗi cấp rộng thêm bao nhiêu.",
 		"chung: mấy con số dùng chung cho cả game (max_level = số cấp tối đa)."
 	],
 	"stations": {
@@ -561,26 +564,55 @@
 			77800000000
 		]
 	},
+	"fridge": {
+		"cap_base": 220,
+		"slot": 180,
+		"slot_step": 70,
+		"cost": 600000.0,
+		"cost_mult": 1.7,
+		"max": 3,
+		"up_cost": 180000.0,
+		"up_mult": 1.55,
+		"up_costs": [
+			0,
+			180000,
+			279000,
+			432000,
+			670000,
+			1040000,
+			1610000,
+			2500000,
+			3870000,
+			6000000,
+			9300000,
+			14410000,
+			22330000,
+			34610000,
+			53650000,
+			83160000,
+			128900000,
+			199790000,
+			309680000,
+			480000000,
+			744000000,
+			1153000000,
+			1787000000,
+			2771000000,
+			4294000000
+		]
+	},
 	"staff": {
-		"cook": {
-			"cost": 400000,
-			"salary": 30000,
-			"max": 5
-		},
 		"waiter": {
 			"cost": 300000,
 			"salary": 22000,
-			"max": 5
-		},
-		"cashier": {
-			"cost": 500000,
-			"salary": 35000,
-			"max": 4
+			"max": 2,
+			"free": 1
 		},
 		"shipper": {
 			"cost": 350000,
 			"salary": 25000,
-			"max": 5
+			"max": 2,
+			"free": 1
 		}
 	},
 	"decor": {
@@ -691,6 +723,7 @@
 		"level_batch_every": 4,
 		"offline_max_seconds": 14400.0,
 		"offline_rate": 0.5,
+		"dry_stock_target": 200.0,
 		"max_level": 25
 	}
 }

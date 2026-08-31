@@ -1291,8 +1291,9 @@ func _manager_card(sid: String) -> Control:
 	mid.add_theme_constant_override("separation", int(UIKit.px(3)))
 	top.add_child(mid)
 	mid.add_child(UIKit.label("QUẢN LÝ QUẦY", 16, UIKit.D_TITLE))
-	var desc := UIKit.label("Thuê người trông quầy: tiền tự thu về, khỏi chạm bong bóng.",
-		10, UIKit.D_MUTED)
+	var zname := str(GameManager.floor_data(str(data["floor"]))["name"]).to_lower()
+	var desc := UIKit.label("Thuê người trông quầy: tiền tự thu về, khỏi chạm bong bóng. "
+		+ "Quản lý ra đứng trông ngay tại " + zname + ".", 10, UIKit.D_MUTED)
 	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	desc.custom_minimum_size = Vector2(UIKit.px(150), 0)
 	mid.add_child(desc)

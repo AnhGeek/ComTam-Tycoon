@@ -32,6 +32,8 @@ const C_SLATE := Color8(0x5a, 0x6b, 0x8c)
 const C_LIME := Color8(0x9a, 0xd8, 0x3a)
 const C_DENIM := Color8(0x3f, 0x62, 0x88)
 
+const SUIT_COL := Color8(0x2b, 0x30, 0x42)        # vest quản lý: xám than
+const SHIRT_COL := Color8(0xf7, 0xf9, 0xfd)       # sơ mi trắng bên trong vest
 const SHOE_COL := Color8(0x3a, 0x33, 0x42)
 const EYE_COL := Color8(0x2a, 0x24, 0x33)
 const CHEF_WHITE := Color8(0xfa, 0xfb, 0xfc)
@@ -43,12 +45,23 @@ const PRESETS := {
 		"bottom": C_NAVY, "apron": C_CORAL, "cap": "chefcap", "build": "stocky", "mustache": true},
 	"bay": {"name": "Cô Bảy", "role": "Bếp phụ", "skin": SKIN_B, "hair": HAIR_BLACK, "top": C_TEAL,
 		"bottom": C_NAVY, "apron": C_CREAM, "hair_style": "bun", "build": "slim"},
-	"minh": {"name": "Minh", "role": "Thu ngân", "skin": SKIN_A, "hair": HAIR_BLACK, "top": C_VIOLET,
+	"minh": {"name": "Minh", "role": "Đứng quầy", "skin": SKIN_A, "hair": HAIR_BLACK, "top": C_VIOLET,
 		"bottom": C_NAVY, "cap": "cap", "build": "slim"},
 	"linh": {"name": "Linh", "role": "Phục vụ", "skin": SKIN_D, "hair": HAIR_DARK, "top": C_CORAL,
 		"bottom": C_NAVY, "apron": C_CREAM, "hair_style": "ponytail", "build": "slim"},
-	"tu": {"name": "Bà Tư", "role": "Quản lý", "skin": SKIN_B, "hair": HAIR_GREY, "top": C_AMBER,
+	"hanh": {"name": "Hạnh", "role": "Phục vụ", "skin": SKIN_B, "hair": HAIR_BLACK, "top": C_MINT,
+		"bottom": C_NAVY, "apron": C_CREAM, "hair_style": "bun", "build": "slim"},
+	"phuc": {"name": "Phúc", "role": "Phục vụ", "skin": SKIN_C, "hair": HAIR_BLACK, "top": C_SKY,
+		"bottom": C_SLATE, "apron": C_CREAM, "cap": "cap", "build": "slim"},
+	"tu": {"name": "Bà Tư", "role": "Coi lò than", "skin": SKIN_B, "hair": HAIR_GREY, "top": C_AMBER,
 		"bottom": C_SLATE, "hair_style": "bun", "build": "stocky"},
+	## Quản lý khu: chỉ đứng nhìn quán, nên cho mặc bảnh nhất nhà — nam áo vest
+	## sơ mi cà vạt, nữ vest với váy bút chì.
+	"quan_nam": {"name": "Anh Quản", "role": "Quản lý", "skin": SKIN_A, "hair": HAIR_BLACK,
+		"top": SHIRT_COL, "bottom": SUIT_COL, "suit": SUIT_COL, "tie": C_CORAL, "build": "slim"},
+	"quan_nu": {"name": "Chị Quản", "role": "Quản lý", "skin": SKIN_D, "hair": HAIR_DARK,
+		"top": SHIRT_COL, "bottom": SUIT_COL, "suit": SUIT_COL, "skirt": true,
+		"hair_style": "bun", "build": "slim"},
 	"office": {"name": "Khách văn phòng", "role": "Khách", "skin": SKIN_A, "hair": HAIR_BLACK, "top": C_SKY,
 		"bottom": C_NAVY, "build": "slim", "bag": "satchel"},
 	"auntie": {"name": "Cô Nhàn", "role": "Khách quen", "skin": SKIN_C, "hair": HAIR_GREY, "top": C_PINK,
@@ -159,6 +172,13 @@ static func build(key: String) -> Node3D:
 	var top := mat(p["top"])
 	var bottom := mat(p["bottom"], 0.78)
 
+	# Bộ vest của quản lý: áo khoác sẫm trùm thân và tay, chừa vạt sơ mi ở giữa.
+	# Ai mặc váy thì ống chân để trần, cái váy che hết phần đùi.
+	var suited := p.has("suit")
+	var suit := mat(p.get("suit", SUIT_COL), 0.66) if suited else top
+	var skirted := suited and bool(p.get("skirt", false))
+	var leg := mat(p["skin"], 0.68) if skirted else bottom
+
 	var group := Node3D.new()
 	group.name = "Char" + key.capitalize()
 	group.scale = Vector3.ONE * CHAR_SCALE
@@ -172,11 +192,11 @@ static func build(key: String) -> Node3D:
 	for sx in [-1.0, 1.0]:
 		var hip := Node3D.new()
 		hip.position = Vector3(sx * 0.115 * bw, hip_y, 0)
-		hip.add_child(_mi(_cyl(0.105 * bw, 0.092 * bw, 0.42 * bh), bottom, 0, -0.21 * bh, 0))
+		hip.add_child(_mi(_cyl(0.105 * bw, 0.092 * bw, 0.42 * bh), leg, 0, -0.21 * bh, 0))
 
 		var knee := Node3D.new()
 		knee.position = Vector3(0, -0.42 * bh, 0)
-		knee.add_child(_mi(_cyl(0.088 * bw, 0.072 * bw, 0.4 * bh), bottom, 0, -0.2 * bh, 0))
+		knee.add_child(_mi(_cyl(0.088 * bw, 0.072 * bw, 0.4 * bh), leg, 0, -0.2 * bh, 0))
 
 		var ankle := Node3D.new()
 		ankle.position = Vector3(0, -0.4 * bh, 0)
@@ -192,13 +212,30 @@ static func build(key: String) -> Node3D:
 	torso.position = Vector3(0, hip_y, 0)
 	root.add_child(torso)
 	torso.add_child(_mi(_cyl(0.19 * bw, 0.17 * bw, 0.16 * bh), bottom, 0, 0.06 * bh, 0))
-	var chest := _mi(_cyl(0.215 * bw, 0.185 * bw + belly, 0.44 * bh), top, 0, 0.36 * bh, 0)
+	var chest := _mi(_cyl(0.215 * bw, 0.185 * bw + belly, 0.44 * bh), suit, 0, 0.36 * bh, 0)
 	chest.scale = Vector3(1, 1, 0.78)
 	torso.add_child(chest)
-	var shoulders := _mi(_cyl(0.075, 0.075, 0.42 * bw), top, 0, 0.55 * bh, 0)
+	var shoulders := _mi(_cyl(0.075, 0.075, 0.42 * bw), suit, 0, 0.55 * bh, 0)
 	shoulders.rotation.z = PI / 2.0
 	torso.add_child(shoulders)
 	torso.add_child(_mi(_cyl(0.055, 0.06, 0.09), skin, 0, 0.62 * bh, 0))
+
+	if suited:
+		# vạt sơ mi hở giữa ngực, hai bên là ve áo chéo xuống
+		torso.add_child(_mi(_bx(0.14 * bw, 0.4 * bh, 0.02), top, 0, 0.4 * bh, 0.15 * bw))
+		for lx in [-1.0, 1.0]:
+			var lapel := _mi(_bx(0.075 * bw, 0.3 * bh, 0.02), suit,
+				lx * 0.085 * bw, 0.43 * bh, 0.155 * bw)
+			lapel.rotation.z = lx * 0.22
+			torso.add_child(lapel)
+		if p.has("tie"):
+			torso.add_child(_mi(_bx(0.05, 0.26 * bh, 0.02), mat(p["tie"], 0.7),
+				0, 0.38 * bh, 0.163 * bw))
+			torso.add_child(_mi(_bx(0.055, 0.05, 0.025), mat(p["tie"], 0.7),
+				0, 0.53 * bh, 0.163 * bw))
+	if skirted:
+		# váy bút chì loe nhẹ, buông từ hông xuống quá gối một chút
+		torso.add_child(_mi(_cyl(0.2 * bw, 0.29 * bw, 0.4 * bh, 12), suit, 0, -0.16 * bh, 0))
 
 	if p.has("apron"):
 		var ap_mat := mat(p["apron"], 0.85)
@@ -260,7 +297,7 @@ static func build(key: String) -> Node3D:
 	for sx3 in [-1.0, 1.0]:
 		var sh := Node3D.new()
 		sh.position = Vector3(sx3 * 0.225 * bw, 0.53 * bh, 0)
-		sh.add_child(_mi(_cyl(0.062, 0.055, 0.3 * bh), top, 0, -0.15 * bh, 0))
+		sh.add_child(_mi(_cyl(0.062, 0.055, 0.3 * bh), suit, 0, -0.15 * bh, 0))
 		var elbow := Node3D.new()
 		elbow.position = Vector3(0, -0.3 * bh, 0)
 		elbow.add_child(_mi(_cyl(0.052, 0.045, 0.28 * bh), skin, 0, -0.14 * bh, 0))

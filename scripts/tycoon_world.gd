@@ -38,6 +38,8 @@ const POT_SWING := 0.7             # nhấc nắp lên (và hạ xuống) mất 
 # Nồi cơm cao gần bằng người, đứng bục thường thì cái nồi che kín tới tận cổ.
 # Ai coi nồi cao thì kê bục cao hơn hẳn cho lộ nửa người trên ra khỏi nồi.
 const POT_STAND := 0.68
+## Người phục vụ của một khu, lấy lần lượt theo danh sách này cho đỡ giống hệt nhau
+const SERVER_KEYS := ["linh", "hanh", "phuc"]
 const MAX_CUSTOMERS := 12          # trần số khách mỗi khu, giữ cho điện thoại yếu chạy mượt
 const ACTOR_LOD_RANGE := 1.5       # khu cách tầm nhìn quá xa thì thôi tính hoạt hình
 const ROOM_W := 7.6
@@ -156,9 +158,9 @@ var _tables: Dictionary = {}      # chỉ số tầng -> Array[Vector3] tâm bà
 var _dragging := false
 var _drag_moved := 0.0
 var _floats: Array = []
-var _service: Dictionary = {}      # chỉ số khu -> vòng chờ món của người phục vụ
 var _meters: Array = []            # mọi vòng đếm giờ đang có trong cảnh
 var _grill: Dictionary = {}        # các bộ phận của lò than để cập nhật mỗi khung hình
+var _decor_bits: Array = []        # quạt + bảng hiệu LED: mấy món trang trí biết cựa quậy
 var _reported_floor := -1
 var _multi := false                 # đang có từ hai ngón trở lên chạm màn hình
 var _multi_hold := 0.0
@@ -417,9 +419,9 @@ func rebuild() -> void:
     _furni_by_index.clear()
     _blockers.clear()
     _solids.clear()
-    _service.clear()
     _meters.clear()
     _grill.clear()
+    _decor_bits.clear()
 
     for i in GameManager.FLOORS.size():
         var f: Dictionary = GameManager.FLOORS[i]
@@ -518,13 +520,17 @@ func _build_floor(node: Node3D, fid: String, index: int) -> void:
     for i in sids.size():
         _build_station(node, str(sids[i]), _station_slot(i, sids.size()), index)
 
-    # bàn ăn có sẵn của quán: nhà trệt không còn cầu thang nên kê được cả hai bên
-    var spots: Array = [Vector2(-2.2, 0.5), Vector2(2.6, 0.5)]
+    # Bàn ăn có sẵn của quán. Kê lùi xuống phía trước và dồn vào giữa để chừa hai
+    # lối đi thật: một lối chạy dọc trước mặt quầy bếp, một lối rộng bên phải nối
+    # thẳng từ cửa ra vỉa hè vào trong. Bàn phải trước kê sát góc, lối vào chỉ còn
+    # bốn tấc — người bưng cơm với khách chen nhau ở đó là kẹt cứng.
+    var spots: Array = [Vector2(-2.15, 0.85), Vector2(1.45, 0.85)]
     _tables[index] = []
     for i in spots.size():
         _build_table(node, spots[i], index)
 
-    _build_decor(node, index, accent)
+    _build_decor(node, fid, index, accent)
+    _build_fridges(node, fid, index, accent)
     _build_placed(node, index)
     _populate(node, fid, index)
 
@@ -1051,27 +1057,36 @@ func _build_table(node: Node3D, spot: Vector2, index: int) -> void:
             "plate_yaw": atan2(sv.x - pv.x, sv.y - pv.y)})
 
 
-func _build_decor(node: Node3D, index: int, accent: Color) -> void:
+## Trang trí của MỘT khu. Mỗi gian hàng tự lo mặt tiền của nó: chậu cây mua cho
+## vỉa hè thì phòng máy lạnh vẫn trống trơn, nên ở đây chỉ đếm đồ của đúng khu
+## `fid` chứ không đếm chung cả quán.
+func _build_decor(node: Node3D, fid: String, index: int, accent: Color) -> void:
     var hw := ROOM_W * 0.5
     var hd := ROOM_D * 0.5
-    if int(GameManager.decor.get("plant", 0)) > 0:
-        _cylinder(node, 0.22, 0.26, 0.36, C_WOOD_DARK, -hw + 0.55, 0.18, hd - 0.6, 10)
-        _cylinder(node, 0.05, 0.26, 0.9, C_PLANT, -hw + 0.55, 0.78, hd - 0.6, 8)
-        _solid(index, -hw + 0.55, hd - 0.6, 0.28, 0.28)
-    if int(GameManager.decor.get("aquarium", 0)) > 0:
+    # chậu cây nép vách phải: vách trái để dành cho dãy tủ lạnh
+    if GameManager.decor_count(fid, "plant") > 0:
+        _cylinder(node, 0.22, 0.26, 0.36, C_WOOD_DARK, hw - 0.55, 0.18, -hd + 2.8, 10)
+        _cylinder(node, 0.05, 0.26, 0.9, C_PLANT, hw - 0.55, 0.78, -hd + 2.8, 8)
+        _solid(index, hw - 0.55, -hd + 2.8, 0.28, 0.28)
+    if GameManager.decor_count(fid, "aquarium") > 0:
         _box(node, 1.0, 0.6, 0.4, C_WOOD_DARK, hw - 0.75, 0.3, -hd + 2.2)
         _box(node, 0.9, 0.55, 0.34, Color8(0x8f, 0xbc, 0xd8), hw - 0.75, 0.86, -hd + 2.2, 0.3)
         _solid(index, hw - 0.75, -hd + 2.2, 0.5, 0.2)
-    if int(GameManager.decor.get("fan", 0)) > 0:
-        _cylinder(node, 0.07, 0.1, 1.5, C_STEEL_LIGHT, -hw + 0.55, 0.75, -hd + 0.7, 8)
-        _cylinder(node, 0.36, 0.36, 0.1, C_STEEL, -hw + 0.55, 1.55, -hd + 0.7, 14)
-        _solid(index, -hw + 0.55, -hd + 0.7, 0.12, 0.12)
-    var lanterns := mini(int(GameManager.decor.get("lantern", 0)), 4)
+    # Quạt: mua mấy cái thì kê mấy góc, nhiều nhất hai cái cho khỏi rối mắt.
+    var fans := mini(GameManager.decor_count(fid, "fan"), 2)
+    for i in fans:
+        # kê hai góc TRƯỚC của quán: góc sau bị chính cái quầy bếp che kín, đứng
+        # đó thì có quay cả ngày cũng chẳng ai thấy
+        var fx: float = -hw + 0.55 if i == 0 else hw - 0.55
+        var fz: float = hd - 0.45 if i == 0 else hd - 1.5
+        # quạt thổi vào lòng quán: cái bên trái hướng ra giữa, cái bên phải quay lại
+        _build_fan(node, index, fx, fz, 1.3 if i == 0 else -1.3, accent)
+    var lanterns := mini(GameManager.decor_count(fid, "lantern"), 4)
     for i in lanterns:
         _cylinder(node, 0.14, 0.14, 0.34, Color8(0xc4, 0x6b, 0x4a), -1.7 + i * 1.15, FLOOR_H - 0.75, hd - 0.7, 10)
-    # Chó cỏ: mua một con thì khu nào cũng có một con chạy loăng quăng. Nhiều
-    # nhất hai con mỗi khu, đông quá thì rối mắt mà máy yếu cũng nặng thêm.
-    var dogs := mini(int(GameManager.decor.get("dog", 0)), 2)
+    # Chó cỏ: khu nào mua thì khu đó có chó chạy loăng quăng. Nhiều nhất hai con
+    # mỗi khu, đông quá thì rối mắt mà máy yếu cũng nặng thêm.
+    var dogs := mini(GameManager.decor_count(fid, "dog"), 2)
     for i in dogs:
         var dog := ComTamChars.build_dog()
         var spot := _dog_target(index)
@@ -1080,8 +1095,195 @@ func _build_decor(node: Node3D, index: int, accent: Color) -> void:
         _actors.append({"node": dog, "rig": ComTamChars.dog_rig_of(dog), "mode": "dog",
             "floor": index, "state": "sniff", "t": randf() * 2.0, "target": spot,
             "phase": randf() * 3.0})
-    if int(GameManager.decor.get("sign", 0)) > 0:
-        _box(node, 2.2, 0.4, 0.1, C_GOLD, 0, FLOOR_H - 1.55, -hd + 0.2, 0.35)
+    if GameManager.decor_count(fid, "sign") > 0:
+        _build_led_sign(node, index, accent)
+
+
+## Quạt đứng: đế tròn, cột inox, cái đầu quạt gồm lồng bảo vệ + ba cánh.
+##
+## Hai chuyển động tách làm hai khớp lồng nhau, đúng như quạt thật:
+##   - `head` xoay quanh trục Y — cái đầu quạt đảo qua đảo lại
+##   - `spin` xoay quanh trục Z — ba cánh quay tít bên trong lồng
+## Cả hai do `_update_decor` lo. `yaw0` là hướng quạt thổi lúc đầu đứng giữa,
+## nó đảo qua đảo lại quanh hướng đó.
+func _build_fan(node: Node3D, index: int, x: float, z: float, yaw0: float, accent: Color) -> void:
+    var col := Color8(0xe8, 0xee, 0xf8)          # vỏ quạt nhựa trắng ngà
+    var dark := C_STEEL_DARK
+
+    # đế + cột
+    _cylinder(node, 0.3, 0.32, 0.06, dark, x, 0.03, z, 14)
+    _cylinder(node, 0.05, 0.07, 1.5, C_STEEL_LIGHT, x, 0.78, z, 8)
+    _solid(index, x, z, 0.16, 0.16)
+
+    # khớp đảo: mọi thứ từ đây trở lên quay theo cái đầu quạt
+    var head := Node3D.new()
+    head.name = "FanHead"
+    head.position = Vector3(x, 1.56, z)
+    head.rotation.y = yaw0
+    node.add_child(head)
+
+    # cụm mô-tơ phía sau; đầu quạt thổi về hướng +Z của khớp
+    _cylinder(head, 0.11, 0.13, 0.26, col, 0, 0, -0.16, 12).rotation.x = PI * 0.5
+    _box(head, 0.09, 0.07, 0.05, accent, 0, -0.03, -0.3, 0.4)
+
+    # lồng quạt: hai vành thép, để hở cho thấy cánh quay bên trong
+    var ring := TorusMesh.new()
+    ring.inner_radius = 0.33
+    ring.outer_radius = 0.36
+    ring.rings = 20
+    ring.ring_segments = 6
+    for rz in [0.02, 0.13]:
+        var rim := MeshInstance3D.new()
+        rim.mesh = ring
+        rim.material_override = ComTamChars.mat(C_STEEL_LIGHT, 0.4)
+        rim.position = Vector3(0, 0, float(rz))
+        rim.rotation.x = PI * 0.5
+        head.add_child(rim)
+    # mấy nan lồng chắn phía trước
+    for i in 4:
+        var bar := _box(head, 0.02, 0.68, 0.02, C_STEEL_LIGHT, 0, 0, 0.13, 0.4)
+        bar.rotation.z = float(i) * PI / 4.0
+
+    # ba cánh quạt quay quanh trục Z
+    var spin := Node3D.new()
+    spin.name = "FanBlades"
+    spin.position = Vector3(0, 0, 0.06)
+    head.add_child(spin)
+    _cylinder(spin, 0.07, 0.07, 0.06, dark, 0, 0, 0, 10).rotation.x = PI * 0.5
+    for i in 3:
+        var arm := Node3D.new()
+        arm.rotation.z = float(i) * TAU / 3.0
+        spin.add_child(arm)
+        var blade := _box(arm, 0.3, 0.17, 0.012, col, 0.17, 0, 0, 0.35)
+        blade.rotation.x = 0.35        # cánh hơi vênh cho ra dáng ăn gió
+
+    _decor_bits.append({"kind": "fan", "head": head, "spin": spin,
+        "yaw0": yaw0, "floor": index, "phase": randf() * TAU})
+
+
+## Bảng hiệu đèn LED treo trên tường sau: nền tối, chữ "CƠM TẤM" phát sáng, viền
+## là một dãy bóng LED chạy vòng quanh. Bảng hiệu mà đứng im thì chán, nên chỗ
+## này chỉ gom sẵn mấy vật liệu phát sáng lại; phần nhấp nháy nằm ở
+## `_update_decor`, chỉnh độ sáng mỗi khung hình.
+func _build_led_sign(node: Node3D, index: int, accent: Color) -> void:
+    var hd := ROOM_D * 0.5
+    var sg := Node3D.new()
+    sg.name = "LedSign"
+    # treo dưới bảng tên khu một khoảng, không thì hai cái chữ chồng lên nhau
+    sg.position = Vector3(0, 1.44, -hd + 0.2)
+    node.add_child(sg)
+
+    # khung + nền bảng
+    _box(sg, 2.46, 0.68, 0.05, C_STEEL_DARK, 0, 0, 0, 0.5)
+    _box(sg, 2.3, 0.54, 0.06, Color8(0x14, 0x18, 0x28), 0, 0, 0.02, 0.6)
+
+    # chữ neon giữa bảng + gạch chân sáng
+    var neon := Color8(0xff, 0x5f, 0xa8)
+    var txt := _label3d(sg, "CƠM TẤM", 46, neon, 0, 0.06, 0.07, false)
+    var bar := _box(sg, 1.5, 0.035, 0.02, accent, 0, -0.15, 0.07, 0.2)
+    _emissive(bar, accent, 2.2)
+
+    # dãy bóng LED chạy vòng quanh viền bảng
+    var bulbs: Array = []
+    var pts: Array = []
+    for i in 9:
+        var bx := -1.12 + float(i) * 0.28
+        pts.append(Vector2(bx, 0.29))
+        pts.append(Vector2(bx, -0.29))
+    for p in pts:
+        var pv: Vector2 = p
+        var b := _cylinder(sg, 0.035, 0.035, 0.03, C_GOLD, pv.x, pv.y, 0.06, 8)
+        b.rotation.x = PI * 0.5
+        var bm := StandardMaterial3D.new()
+        bm.albedo_color = C_GOLD
+        bm.emission_enabled = true
+        bm.emission = C_GOLD
+        bm.emission_energy_multiplier = 2.0
+        b.material_override = bm
+        bulbs.append(bm)
+
+    _decor_bits.append({"kind": "sign", "node": sg, "text": txt,
+        "bar": bar.material_override, "bulbs": bulbs, "neon": neon,
+        "floor": index, "phase": float(index) * 0.6})
+
+
+## Dãy tủ lạnh của khu: kê dọc vách trái, mua mấy cái thì đứng mấy cái. Kho
+## nguyên liệu vẫn dùng chung cả quán, nhưng tủ thì khu nào mua khu đó kê — nhìn
+## vào là biết khu này đã lo được chỗ trữ đồ tươi tới đâu.
+##
+## Vách trái chỉ nhét vừa hai cái mà không che mất quầy bếp, nên cái thứ ba mua
+## rồi thì vẫn tính chỗ trữ, chỉ là không bày ra cho đỡ chật.
+func _build_fridges(node: Node3D, fid: String, index: int, accent: Color) -> void:
+    var hw := ROOM_W * 0.5
+    var shown := mini(GameManager.fridge_count(fid), 2)
+    for i in shown:
+        _build_fridge(node, index, -hw + 0.45, -0.55 + float(i) * 1.6, accent)
+
+
+## Một cái tủ lạnh hai cửa: thân inox, hai cánh có tay nắm dọc, viền màu khu ở
+## nóc. Quay mặt vào lòng quán (nhìn về +X) vì nó dựa lưng vào vách trái.
+func _build_fridge(node: Node3D, index: int, x: float, z: float, accent: Color) -> void:
+    var body := Color8(0xe6, 0xeb, 0xf4)
+    var door := Color8(0xd3, 0xdb, 0xea)
+    var dark := C_STEEL_DARK
+
+    var fr := Node3D.new()
+    fr.name = "Fridge"
+    fr.position = Vector3(x, 0, z)
+    fr.rotation.y = PI * 0.5          # mặt tủ quay ra giữa quán
+    node.add_child(fr)
+
+    # thân tủ + chân đế
+    _box(fr, 0.78, 0.06, 0.66, dark, 0, 0.03, 0, 0.5)
+    _box(fr, 0.8, 1.62, 0.68, body, 0, 0.87, 0, 0.45)
+    _box(fr, 0.84, 0.07, 0.72, accent, 0, 1.71, 0, 0.4)      # viền màu khu trên nóc
+
+    # hai cánh cửa: cánh trên ngăn đá, cánh dưới ngăn mát
+    _box(fr, 0.74, 0.52, 0.04, door, 0, 1.42, 0.35, 0.4)
+    _box(fr, 0.74, 1.0, 0.04, door, 0, 0.66, 0.35, 0.4)
+    # khe hở giữa hai cánh cho ra dáng tủ hai ngăn
+    _box(fr, 0.76, 0.03, 0.05, dark, 0, 1.14, 0.35, 0.5)
+    # tay nắm dọc, cả hai cùng nằm mé trái cánh
+    for hy in [1.42, 0.8]:
+        _box(fr, 0.05, 0.34, 0.05, C_STEEL_LIGHT, -0.28, hy, 0.39, 0.35)
+    # cái nhãn nhỏ trên cánh dưới cho đỡ trơ
+    _box(fr, 0.2, 0.09, 0.02, accent, 0.2, 0.28, 0.38, 0.4)
+
+    _solid(index, x, z, 0.4, 0.42)
+
+
+## Nhịp sống của mấy món trang trí: quạt đảo qua đảo lại còn cánh thì quay tít,
+## bảng hiệu LED thở nhè nhẹ rồi chớp một cái, viền chạy đèn vòng quanh.
+func _update_decor(delta: float) -> void:
+    for raw in _decor_bits:
+        var d: Dictionary = raw
+        # khu ở xa tầm nhìn thì thôi khỏi tính, để dành sức cho máy yếu
+        if absf(float(d["floor"]) - focus) > ACTOR_LOD_RANGE:
+            continue
+        var ph := float(d["phase"])
+        if str(d["kind"]) == "fan":
+            var head: Node3D = d["head"]
+            # đảo qua đảo lại chừng ±40 độ quanh hướng ban đầu, chậm rãi như quạt thật
+            head.rotation.y = float(d["yaw0"]) + sin(_time * 0.55 + ph) * 0.7
+            var spin: Node3D = d["spin"]
+            spin.rotation.z -= delta * 16.0
+        else:
+            var t := _time * 2.4 + ph
+            # chữ neon thở nhè nhẹ, cứ một lúc lại chớp tối một nhịp như đèn thật
+            var beat := 0.72 + 0.28 * sin(t)
+            if fmod(t, TAU * 3.0) < 0.35:
+                beat = 0.22
+            var txt: Label3D = d["text"]
+            var neon: Color = d["neon"]
+            txt.modulate = Color(neon.r * beat, neon.g * beat, neon.b * beat, 1.0)
+            var bmat: StandardMaterial3D = d["bar"]
+            bmat.emission_energy_multiplier = 0.6 + beat * 2.2
+            # viền chạy đèn: bóng nào tới lượt thì sáng rực, còn lại lim dim
+            var bulbs: Array = d["bulbs"]
+            for i in bulbs.size():
+                var m: StandardMaterial3D = bulbs[i]
+                var wave := sin(_time * 5.0 - float(i) * 0.7 + ph)
+                m.emission_energy_multiplier = 0.35 + maxf(0.0, wave) * 3.2
 
 
 # ---------- Quầy hàng ----------
@@ -1475,12 +1677,6 @@ func _make_meter(host: Node3D, y: float, radius: float, lit: Color,
     return meter
 
 
-## Vòng của người phục vụ: chạy nhanh chậm theo TỔNG sức làm của mọi quầy trong
-## khu (xem GameManager.service_time), chỉ hiện lúc người ta đứng chờ món ở quầy.
-func _build_service_meter(server: Node3D, index: int, accent: Color) -> void:
-    _service[index] = _make_meter(server, 2.25, 0.27, C_OK, accent)
-
-
 ## Vòng luôn quay mặt về phía máy quay (máy quay chỉ đổi hướng ngang) và sáng
 ## dần theo tiến độ của riêng nó.
 func _update_service(_delta: float) -> void:
@@ -1585,6 +1781,21 @@ func _make_dish(parent: Node3D) -> Node3D:
     return dish
 
 
+## Quản lý của khu: khu nào đã thuê quản lý cho ít nhất một quầy thì dựng một
+## người mặc vest ra đứng phía trước quán, gần lối ra vỉa hè cho dễ thấy mặt.
+## Quản lý không bưng bê gì hết — chỉ đứng im trông chừng, nên không có đường đi,
+## không có việc, chỉ thở nhè nhẹ theo `idle`.
+func _build_manager(node: Node3D, fid: String, index: int) -> void:
+    if GameManager.floor_managers(fid) <= 0:
+        return
+    var boss := ComTamChars.build("quan_nam" if index % 2 == 0 else "quan_nu")
+    boss.position = Vector3(-0.9, 0.0, ROOM_D * 0.5 - 0.55)
+    boss.rotation.y = 0.25          # quay mặt ra đường, hơi nghiêng về phía máy quay
+    node.add_child(boss)
+    _actors.append({"node": boss, "rig": ComTamChars.rig_of(boss), "mode": "boss",
+        "floor": index, "phase": randf() * 3.0})
+
+
 func _populate(node: Node3D, fid: String, index: int) -> void:
     var hd := ROOM_D * 0.5
     var sids: Array = GameManager.stations_on_floor(fid)
@@ -1642,26 +1853,49 @@ func _populate(node: Node3D, fid: String, index: int) -> void:
         _actors.append({"node": ch, "rig": crig, "mode": "cook", "station": sid_here,
             "knife": knife, "paddle": paddle, "floor": index, "phase": randf() * 3.0})
 
-    # người phục vụ: lấy đĩa ở quầy -> bưng ra bàn -> quay lại quầy
-    var linh := ComTamChars.build("linh")
-    var pickup := Vector3(0.0, 0, -hd + 2.15)
-    linh.position = pickup
-    node.add_child(linh)
-    var rig := ComTamChars.rig_of(linh)
-    var tray := MeshInstance3D.new()
-    var tm := BoxMesh.new()
-    tm.size = Vector3(0.34, 0.04, 0.26)
-    tray.mesh = tm
-    tray.material_override = ComTamChars.mat(C_STEEL_LIGHT)
-    rig["arms"][1]["elbow"].add_child(tray)
-    tray.position = Vector3(0, -0.30, 0.05)
-    var dish := _make_dish(tray)
-    dish.position = Vector3(0, 0.045, 0)
-    dish.visible = false
-    _build_service_meter(linh, index, FLOOR_ACCENTS[index % FLOOR_ACCENTS.size()])
-    _actors.append({"node": linh, "rig": rig, "mode": "server", "floor": index,
-        "state": "wait", "t": 0.0, "dish": dish, "tray": tray, "pickup": pickup,
-        "target": pickup, "y": 0.0, "phase": 0.0})
+    # quản lý khu: thuê rồi thì có người đứng trông, chỉ đứng im nhìn quán
+    _build_manager(node, fid, index)
+
+    # Người phục vụ: mở khu là có sẵn một người, thuê thêm được đúng một người
+    # nữa — `staff_count` đã gộp cả hai nên có mấy người thì dựng bấy nhiêu. Ai
+    # cũng tự lấy đĩa ở quầy, tự bưng ra bàn, tự quay về chỗ mình, nên đông người
+    # thì nhiều khay chạy song song, cơm ra bàn mau hơn.
+    var accent: Color = FLOOR_ACCENTS[index % FLOOR_ACCENTS.size()]
+    var crew := GameManager.staff_count(fid, "waiter")
+    for i in crew:
+        var sv := ComTamChars.build(str(SERVER_KEYS[i % SERVER_KEYS.size()]))
+        # dàn hàng ngang trước quầy, mỗi người một chỗ đứng riêng cho khỏi chồng nhau
+        var pickup := Vector3((float(i) - float(crew - 1) * 0.5) * 0.9, 0, -hd + 2.15)
+        sv.position = pickup
+        node.add_child(sv)
+        var rig := ComTamChars.rig_of(sv)
+        var tray := MeshInstance3D.new()
+        var tm := BoxMesh.new()
+        tm.size = Vector3(0.34, 0.04, 0.26)
+        tray.mesh = tm
+        tray.material_override = ComTamChars.mat(C_STEEL_LIGHT)
+        rig["arms"][1]["elbow"].add_child(tray)
+        tray.position = Vector3(0, -0.30, 0.05)
+        var dish := _make_dish(tray)
+        dish.position = Vector3(0, 0.045, 0)
+        dish.visible = false
+        # mỗi người một vòng chờ món trên đầu, ai cầm đĩa trước thì vòng người đó tắt
+        _actors.append({"node": sv, "rig": rig, "mode": "server", "floor": index,
+            "state": "wait", "t": -float(i) * 0.9, "dish": dish, "tray": tray,
+            "pickup": pickup, "target": pickup, "y": 0.0, "phase": randf() * 3.0,
+            "meter": _make_meter(sv, 2.25, 0.27, C_OK, accent)})
+
+    # Shipper: mở khu cũng có sẵn một người, thuê thêm được một người nữa. Ai
+    # cũng ôm thùng cơm đứng chờ ở quầy rồi phóng ra đường giao, giao xong lại
+    # lộn về lấy chuyến khác.
+    for i in GameManager.staff_count(fid, "shipper"):
+        var sh := ComTamChars.build("driver")
+        var post := Vector3(2.5 - float(i) * 0.62, 0, -hd + 1.55)
+        sh.position = post
+        node.add_child(sh)
+        _actors.append({"node": sh, "rig": ComTamChars.rig_of(sh), "mode": "shipper",
+            "floor": index, "state": "load", "t": -float(i) * 1.6, "post": post,
+            "path": [], "y": 0.0, "slot": i, "phase": randf() * 3.0})
 
     # khách: tầng trệt thì đi dọc vỉa hè tới, tầng trên vào từ cầu thang
     var seats_here := 0
@@ -1671,7 +1905,7 @@ func _populate(node: Node3D, fid: String, index: int) -> void:
     # Càng nhiều chỗ ngồi thì quán càng đông: khách bám theo số ghế thật của tầng
     # (kể cả bàn người chơi mới kê), chặn trên 12 người/tầng cho máy yếu thở được.
     var count := clampi(int(round(float(seats_here) * 0.7)), 4, MAX_CUSTOMERS)
-    count = mini(count, maxi(4, int(GameManager.arrival_rate())))
+    count = mini(count, maxi(4, int(GameManager.floor_arrival_rate(fid))))
     for i in count:
         var key: String = str(ComTamChars.CUSTOMER_KEYS[randi() % ComTamChars.CUSTOMER_KEYS.size()])
         var ch2 := ComTamChars.build(key)
@@ -1710,6 +1944,7 @@ func _process(delta: float) -> void:
     _update_stations()
     _update_service(delta)
     _update_grill(delta)
+    _update_decor(delta)
     _update_actors(delta)
     _update_floats(delta)
 
@@ -1765,17 +2000,121 @@ func _update_stations() -> void:
                 n.position.x = randf_range(-0.35, 0.35)
 
 
-## Đẩy người ra khỏi mọi khối đặc của khu mình đang đứng.
+## Đoạn thẳng p->q có xiên qua hình chữ nhật (tâm c, nửa chiều h) không? Trả về
+## quãng đường tới chỗ đụng (0 = đụng ngay dưới chân, 1 = tận đích), -1 là không
+## đụng. Cắt lát theo từng trục, kiểu quen thuộc của mọi phép cắt hình hộp.
+func _seg_hits_box(p: Vector2, q: Vector2, c: Vector2, h: Vector2) -> float:
+    var d := q - p
+    var t0 := 0.0
+    var t1 := 1.0
+    for axis in 2:
+        var dv: float = d.x if axis == 0 else d.y
+        var pv: float = p.x if axis == 0 else p.y
+        var cv: float = c.x if axis == 0 else c.y
+        var hv: float = h.x if axis == 0 else h.y
+        if absf(dv) < 0.00001:
+            if absf(pv - cv) > hv:
+                return -1.0
+            continue
+        var ta := (cv - hv - pv) / dv
+        var tb := (cv + hv - pv) / dv
+        if ta > tb:
+            var sw := ta
+            ta = tb
+            tb = sw
+        t0 = maxf(t0, ta)
+        t1 = minf(t1, tb)
+        if t0 > t1:
+            return -1.0
+    return t0
+
+
+## Ngắm vòng qua một GÓC của khối chắn đường: trong bốn góc, lấy hai góc lệch xa
+## nhất sang hai bên so với hướng đang đi, rồi đi vòng qua bên nào lệch ít hơn.
 ##
-## Đụng cạnh nào thì đẩy ngược ra đúng cạnh cạn nhất — thành ra người TRƯỢT dọc
-## mép bàn chứ không khựng lại. Đâm thẳng vào chính giữa một cạnh thì không còn
-## đà trượt nào cả, nên phải hích thêm một cái sang mép gần nhất để họ vòng qua,
-## không thì cứ đứng dí vào mép bàn giậm chân tại chỗ.
+## Chọn xong phải NHỚ, hễ còn vướng cái khối đó thì cứ vòng bên ấy. Cứ mỗi khung
+## hình lại chọn lại thì tới góc bàn là người lắc qua lắc lại rồi đứng luôn ở đó
+## — đúng cái kẹt ở góc phải trong nhà.
+func _corner_around(a: Dictionary, p: Vector2, d: Vector2, c: Vector2, h: Vector2) -> Vector2:
+    var along := d - p
+    if along.length() < 0.001:
+        return d
+    along = along.normalized()
+    var lat := Vector2(-along.y, along.x)
+    var lo := Vector2.ZERO
+    var hi := Vector2.ZERO
+    var lo_v := 1e9
+    var hi_v := -1e9
+    for sx in [-1.0, 1.0]:
+        for sz in [-1.0, 1.0]:
+            var corner: Vector2 = c + Vector2(h.x * float(sx), h.y * float(sz))
+            var v := (corner - p).dot(lat)
+            if v < lo_v:
+                lo_v = v
+                lo = corner
+            if v > hi_v:
+                hi_v = v
+                hi = corner
+    var side := 1.0 if absf(hi_v) < absf(lo_v) else -1.0
+    if a.has("_side") and (a.get("_side_c", Vector2.ZERO) as Vector2) == c:
+        side = float(a["_side"])
+    a["_side_c"] = c
+    a["_side"] = side
+    # ngắm hơi ra ngoài góc một chút cho khỏi cạ vào đúng cái mũi bàn
+    return (hi if side > 0.0 else lo) + lat * side * 0.14
+
+
+## Chỗ cần NGẮM cho bước tới. Đường thẳng tới đích quang quẻ thì ngắm thẳng đích;
+## có cái bàn nằm chắn thì ngắm vòng qua góc nó. Xét hai lượt: vòng qua bàn rồi
+## mà còn vướng cái quầy thì vòng tiếp.
+func _steer(a: Dictionary, node: Node3D, target: Vector3) -> Vector3:
+    var list: Array = _solids.get(int(a.get("floor", 0)), [])
+    if list.is_empty():
+        return target
+    var pad := Vector2(BODY_R, BODY_R) * 1.05
+    var p := Vector2(node.position.x, node.position.z)
+    var d := Vector2(target.x, target.z)
+    var aim := d
+    var done: Array = []
+    for _pass in 2:
+        var best := -1.0
+        var bc := Vector2.ZERO
+        var bh := Vector2.ZERO
+        for s in list:
+            var sd: Dictionary = s
+            var c: Vector2 = sd["c"]
+            if done.has(c):
+                continue
+            var h: Vector2 = (sd["h"] as Vector2) + pad
+            # đích nằm ngay trong lòng khối (ghế sát bàn) thì đừng vòng, cứ đi vào
+            var near := Vector2(clampf(d.x, c.x - h.x, c.x + h.x), clampf(d.y, c.y - h.y, c.y + h.y))
+            if near.distance_squared_to(d) < 0.000001:
+                continue
+            var t := _seg_hits_box(p, aim, c, h)
+            if t < 0.0:
+                continue
+            if best < 0.0 or t < best:
+                best = t
+                bc = c
+                bh = h
+        if best < 0.0:
+            break
+        done.append(bc)
+        aim = _corner_around(a, p, aim, bc, bh)
+    if aim == d:
+        a.erase("_side")
+        a.erase("_side_c")
+    return Vector3(aim.x, target.y, aim.y)
+
+
+## Lưới an toàn: đẩy người ra khỏi mọi khối đặc của khu mình đang đứng, đụng cạnh
+## nào thì đẩy ngược ra đúng cạnh cạn nhất nên người TRƯỢT dọc mép bàn. Việc vòng
+## qua cái bàn là của `_steer()`; đây chỉ lo cái thân không lún vào gỗ.
 ##
 ## `dest` là chỗ cần tới: khối nào ôm sát chỗ đó (cái bàn của chính cái ghế mình
 ## sắp ngồi chẳng hạn) thì bỏ qua, không thì khách đi tới nơi rồi bị đẩy bật ra,
 ## cả đời không ngồi xuống được.
-func _avoid_solids(a: Dictionary, node: Node3D, dest: Vector3, step: float) -> void:
+func _avoid_solids(a: Dictionary, node: Node3D, dest: Vector3) -> void:
     var list: Array = _solids.get(int(a.get("floor", 0)), [])
     if list.is_empty():
         return
@@ -1794,15 +2133,10 @@ func _avoid_solids(a: Dictionary, node: Node3D, dest: Vector3, step: float) -> v
         var oz := h.y + BODY_R - absf(dz)      # ... và theo chiều sâu
         if ox <= 0.0 or oz <= 0.0:
             continue
-        var to := d - p
         if ox < oz:
             p.x = c.x + (h.x + BODY_R) * (1.0 if dx >= 0.0 else -1.0)
-            if absf(to.y) < 0.4:
-                p.y += (1.0 if dz >= 0.0 else -1.0) * step
         else:
             p.y = c.y + (h.y + BODY_R) * (1.0 if dz >= 0.0 else -1.0)
-            if absf(to.x) < 0.4:
-                p.x += (1.0 if dx >= 0.0 else -1.0) * step
     node.position.x = p.x
     node.position.z = p.y
 
@@ -1817,10 +2151,18 @@ func _step_toward(node: Node3D, target: Vector3, speed: float, delta: float,
         return true
     var from := Vector2(node.position.x, node.position.z)
     var step := speed * delta
-    node.position.x += (d.x / dist) * step
-    node.position.z += (d.y / dist) * step
+    # đi thẳng tới đích, trừ khi giữa đường có cái bàn: lúc đó ngắm vòng qua góc
+    var aim := d
     if not a.is_empty():
-        _avoid_solids(a, node, target, step)
+        var look := _steer(a, node, target)
+        aim = Vector2(look.x - from.x, look.z - from.y)
+        if aim.length() < 0.001:
+            aim = d
+    aim = aim.normalized()
+    node.position.x += aim.x * step
+    node.position.z += aim.y * step
+    if not a.is_empty():
+        _avoid_solids(a, node, target)
     # quay mặt theo hướng ĐI THẬT, để lúc trượt dọc mép bàn thì người cũng xoay
     # theo mép bàn chứ không đi ngang như cua
     var mv := Vector2(node.position.x, node.position.z) - from
@@ -1843,6 +2185,10 @@ func _update_actors(delta: float) -> void:
         match str(a["mode"]):
             "cook":
                 _update_cook(a, rig, t)
+            "boss":
+                ComTamChars.idle(rig, t)
+            "shipper":
+                _update_shipper(a, node, rig, t, delta)
             "server":
                 _update_server(a, node, rig, t, delta)
             "dog":
@@ -1952,7 +2298,7 @@ func _update_server(a: Dictionary, node: Node3D, rig: Dictionary, t: float, delt
             node.rotation.y = PI
             var fid := str(GameManager.FLOORS[int(a["floor"])]["id"])
             var wait_for := GameManager.service_time(fid)
-            _set_service_ratio(int(a["floor"]), float(a["t"]) / wait_for, true)
+            _set_meter(a.get("meter"), float(a["t"]) / wait_for, true)
             if float(a["t"]) < wait_for:
                 return
             # Có đĩa rồi: tìm người ĐANG NGỒI BÀN chờ ăn, ai chờ lâu nhất đi trước.
@@ -1968,7 +2314,7 @@ func _update_server(a: Dictionary, node: Node3D, rig: Dictionary, t: float, delt
             a["state"] = "deliver"
             a["t"] = 0.0
             # bưng được đĩa rồi thì tắt vòng, đi giao đã
-            _set_service_ratio(int(a["floor"]), 0.0, false)
+            _set_meter(a.get("meter"), 0.0, false)
         "deliver":
             carrying = true
             var tgt: Vector3 = a["target"]
@@ -2015,6 +2361,51 @@ func _update_server(a: Dictionary, node: Node3D, rig: Dictionary, t: float, delt
     node.position.y = move_toward(node.position.y, float(a.get("y", 0.0)), delta * 1.8)
     _carry_pose(rig)
     _level_tray(a["tray"])
+
+
+## Shipper: đứng ở quầy chờ đóng hộp -> phóng ra đường giao -> khuất mắt một lát
+## -> quay đầu vô quán lấy chuyến kế. Cứ thế cả ngày, nên nhìn vào quán lúc nào
+## cũng có người ra người vào. Shipper không đụng gì tới khách ngồi bàn: khách
+## của họ ở ngoài đường, mình chỉ thấy phần chạy đi chạy về.
+func _update_shipper(a: Dictionary, node: Node3D, rig: Dictionary, t: float, delta: float) -> void:
+    a["t"] = float(a["t"]) + delta
+    var floor_i := int(a["floor"])
+    var slot := int(a["slot"])
+    if float(a["t"]) < 0.0:
+        ComTamChars.idle(rig, t)
+        return
+    node.position.y = move_toward(node.position.y, float(a.get("y", 0.0)), delta * 1.8)
+
+    match str(a["state"]):
+        "load":
+            # đứng quay vào quầy chờ người ta xếp hộp lên thùng
+            ComTamChars.idle(rig, t)
+            node.rotation.y = PI
+            var fid := str(GameManager.FLOORS[floor_i]["id"])
+            if float(a["t"]) > clampf(GameManager.service_time(fid) * 1.6, 2.5, 8.0):
+                a["path"] = _route(node.position, _exit_point(floor_i, slot + 1), true, floor_i)
+                a["state"] = "go"
+                a["t"] = 0.0
+        "go":
+            if _follow_path(a, node, rig, t, delta, 1.75):
+                # ra khỏi khung hình rồi thì tắt đi cho đỡ nặng máy
+                node.visible = false
+                a["state"] = "away"
+                a["t"] = 0.0
+                a["rest"] = 4.0 + randf() * 2.5      # quãng đi giao, mỗi chuyến một khác
+        "away":
+            if float(a["t"]) > float(a.get("rest", 5.0)):
+                var sp: Vector3 = _spawn_point(floor_i, slot)
+                node.position = sp
+                node.visible = true
+                a["y"] = sp.y
+                a["path"] = _route(sp, Vector3(a["post"]), false, floor_i)
+                a["state"] = "back"
+                a["t"] = 0.0
+        "back":
+            if _follow_path(a, node, rig, t, delta, 1.75):
+                a["state"] = "load"
+                a["t"] = 0.0
 
 
 ## Một chỗ bất kỳ trong lòng quán để con chó lững thững đi tới.
@@ -2154,11 +2545,6 @@ func _serve_guest(guest) -> void:
     g["booked"] = false
     _show_plate(g, true)
     _set_meter(g.get("meter"), 0.0, false)
-
-
-## Đặt tiến độ (và cho ẩn/hiện) vòng chờ món của người phục vụ trong một khu.
-func _set_service_ratio(index: int, ratio: float, show: bool = true) -> void:
-    _set_meter(_service.get(index), ratio, show)
 
 
 ## Tay cầm khay giữ nguyên tư thế bưng, kể cả lúc đang bước đi.
