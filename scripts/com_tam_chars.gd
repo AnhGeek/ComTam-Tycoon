@@ -476,6 +476,64 @@ static func attach_knife(rig: Dictionary) -> Node3D:
 	return knife
 
 
+## Cái vá xới cơm cầm tay phải, mặc định ẩn: cán gỗ với lưỡi nhựa trắng bản to.
+## Chỉ lòi ra đúng lúc người coi nồi mở nắp ra đảo cơm.
+static func attach_paddle(rig: Dictionary) -> Node3D:
+	var paddle := Node3D.new()
+	paddle.position = Vector3(0, -0.05, 0.02)
+	paddle.rotation = Vector3(-1.25, 0, 0)
+	paddle.add_child(_mi(_bx(0.018, 0.018, 0.1), mat(Color8(0xc9, 0x8f, 0x5c), 0.8), 0, 0, -0.05))
+	paddle.add_child(_mi(_bx(0.08, 0.012, 0.12), mat(Color8(0xf4, 0xf1, 0xe8), 0.55), 0, 0, 0.06))
+	paddle.visible = false
+	rig["arms"][1]["hand"].add_child(paddle)
+	return paddle
+
+
+## Nhấc nắp nồi: hai tay chụm lên quai nắp rồi kéo bổng lên, người ngả ra sau
+## một chút cho khỏi hứng hơi nóng vào mặt. k = 0 là tay vừa chạm quai, k = 1 là
+## nắp đã lên cao nhất. Đóng nắp thì gọi lại hàm này với k chạy ngược về 0.
+static func lift_lid(rig: Dictionary, k: float) -> void:
+	_legs_rest(rig)
+	var e := clampf(k, 0.0, 1.0)
+	var arms: Array = rig["arms"]
+	# tay trái là tay bưng nắp: nhấc lên rồi quăng cả cánh tay sang trái
+	arms[0]["shoulder"].rotation.x = -1.02 - 0.16 * e
+	arms[0]["shoulder"].rotation.z = -0.22 - 0.62 * e
+	arms[0]["elbow"].rotation.x = -0.62 + 0.3 * e
+	# tay phải chỉ đỡ một nhịp lúc đầu rồi buông ra cho khỏi vướng
+	arms[1]["shoulder"].rotation.x = -1.0 + 0.2 * e
+	arms[1]["shoulder"].rotation.z = 0.2 + 0.1 * e
+	arms[1]["elbow"].rotation.x = -0.62 - 0.2 * e
+	rig["root"].position.y = 0.0
+	rig["root"].rotation.z = 0.0
+	rig["torso"].rotation.x = 0.2 - 0.1 * e
+	rig["torso"].rotation.y = -0.18 * e
+	rig["head"].rotation.x = 0.26 - 0.1 * e
+	rig["head"].rotation.y = -0.14 * e
+
+
+## Đảo nồi cơm: tay trái vịn vành nồi cho khỏi xê dịch, tay phải cầm vá lượn
+## một vòng tròn xới cơm từ dưới lên, đầu cúi nhìn vào lòng nồi.
+static func stir_pot(rig: Dictionary, t: float) -> void:
+	_legs_rest(rig)
+	var w := t * 3.4
+	var arms: Array = rig["arms"]
+	# gạt nắp xong tay trái rút về vịn vành nồi, chỉ gồng nhẹ theo nhịp tay kia
+	arms[0]["shoulder"].rotation.x = -0.92 + sin(w) * 0.04
+	arms[0]["shoulder"].rotation.z = -0.3
+	arms[0]["elbow"].rotation.x = -0.72
+	# tay phải khoắng vòng: đưa tới lui bằng vai, hất sang ngang bằng khuỷu
+	arms[1]["shoulder"].rotation.x = -1.02 + sin(w) * 0.16
+	arms[1]["shoulder"].rotation.z = 0.1 + cos(w) * 0.22
+	arms[1]["elbow"].rotation.x = -0.6 + sin(w + 1.2) * 0.18
+	rig["root"].position.y = 0.0
+	rig["root"].rotation.z = 0.0
+	rig["torso"].rotation.x = 0.18
+	rig["torso"].rotation.y = cos(w) * 0.05
+	rig["head"].rotation.x = 0.32
+	rig["head"].rotation.y = 0.0
+
+
 static func sit(rig: Dictionary, t: float) -> void:
 	var b: Dictionary = rig["build"]
 	rig["root"].position.y = -0.34 * float(b["h"])
