@@ -3,16 +3,30 @@
 		"Bảng số của game: sửa file này rồi chạy install.sh là ra APK mới, khỏi đụng code.",
 		"Thiếu khoá nào thì khoá đó giữ số mặc định trong scripts/game_manager.gd.",
 		"",
-		"GIÁ TỪNG CẤP: mỗi thứ nâng cấp được (mọi quầy, lò than, lò giữ nhiệt, tủ lạnh) có mảng",
-		"  up_costs đúng 25 số, ứng với 25 cấp. Số thứ k là giá để ĐẠT cấp k, nên số đầu",
-		"  tiên là 0 (cấp 1 có sẵn lúc mở quầy) và số cuối là giá lên cấp 25. Sửa thẳng",
-		"  từng số trong mảng là đổi được giá của đúng cấp đó.",
+		"HAI TẦNG: quầy LÀM RA phần bán thành phẩm (phần cơm · phần bì chả · ly trà đá ·",
+		"  miếng sườn nướng), còn MENU mới là món bán cho khách. Khách gọi một món trong",
+		"  menu -> trừ đúng số nguyên bán thành phẩm -> ăn xong mới trả tiền.",
+		"",
+		"stations: mỗi quầy — out (bán thành phẩm nó làm ra), recipe (nguyên liệu tốn",
+		"  cho MỘT phần, ghi số lẻ được: 0.5 nghĩa là hai phần mới vơi một đơn vị, vì KHO",
+		"  luôn là số nguyên nên chỗ lẻ được cộng dồn lại), cycle (giây một mẻ),",
+		"  batch (số phần một mẻ),",
+		"  keep/keep_step (quầy trữ sẵn được bao nhiêu phần, mỗi cấp rộng thêm bấy nhiêu),",
+		"  base_price chỉ để tính lãi hiện trên bảng nâng cấp.",
+		"  Quầy 'grill' không làm ra gì (out rỗng) — nó là lò giữ nhiệt, chứa sườn nướng",
+		"  do lò than vỉa hè nướng ra.",
+		"menu: món bán ra — price (giá bán, số nguyên), weight (mười người vào quán thì",
+		"  mấy người gọi món này), needs (bán thành phẩm tốn cho một suất), where (khu nào",
+		"  có khách gọi món này; 'ship' nghĩa là chỉ shipper giao).",
+		"",
+		"GIÁ TỪNG CẤP: mỗi thứ nâng cấp được (mọi quầy, lò than, lò giữ nhiệt, tủ lạnh) có",
+		"  mảng up_costs đúng 25 số, ứng với 25 cấp. Số thứ k là giá để ĐẠT cấp k, nên số",
+		"  đầu tiên là 0 (cấp 1 có sẵn lúc mở quầy) và số cuối là giá lên cấp 25.",
 		"  up_cost và chung.station_up_mult chỉ còn dùng khi mảng up_costs bị thiếu số.",
 		"",
-		"stations: mỗi quầy — base_price (giá bán một phần), cycle (giây một mẻ),",
-		"  batch (số phần một mẻ), recipe (nguyên liệu tốn cho một phần).",
 		"ingredients: price là giá MỘT đơn vị, pack là số đơn vị trong một bao khi nhập hàng,",
-		"  unit là chữ hiện trên màn Mua sắm (kg · bình · miếng · bao...).",
+		"  unit là chữ hiện trên màn Mua sắm (kg · bình · miếng · bao...). Mấy món có",
+		"  pack = 0 là bán thành phẩm tự làm, không mua ngoài chợ được.",
 		"floors.cost: giá mở khu — trả một lần, không có cấp.",
 		"grill: lò than vỉa hè. warmer: lò giữ nhiệt trong quầy.",
 		"fridge: tủ lạnh — mỗi khu tự mua tủ của khu mình (cost · cost_mult · max) rồi",
@@ -23,10 +37,13 @@
 	"stations": {
 		"grill": {
 			"name": "Lò nướng thịt",
-			"dish": "Cơm tấm sườn",
-			"base_price": 45000,
+			"dish": "Sườn nướng sẵn",
+			"out": "",
+			"base_price": 25000,
 			"cycle": 12.0,
 			"batch": 2,
+			"keep": 0,
+			"keep_step": 0,
 			"up_cost": 120000,
 			"recipe": {
 				"grilled": 1
@@ -61,10 +78,13 @@
 		},
 		"rice": {
 			"name": "Nồi cơm tấm",
-			"dish": "Cơm tấm trứng",
-			"base_price": 35000,
-			"cycle": 10.0,
-			"batch": 2,
+			"dish": "Phần cơm tấm",
+			"out": "com",
+			"base_price": 20000,
+			"cycle": 60.0,
+			"batch": 10,
+			"keep": 40,
+			"keep_step": 8,
 			"up_cost": 90000,
 			"recipe": {
 				"rice": 1,
@@ -100,10 +120,13 @@
 		},
 		"prep": {
 			"name": "Bàn bì & chả",
-			"dish": "Cơm tấm bì chả",
-			"base_price": 50000,
+			"dish": "Phần bì chả",
+			"out": "bicha",
+			"base_price": 30000,
 			"cycle": 15.0,
 			"batch": 2,
+			"keep": 40,
+			"keep_step": 8,
 			"up_cost": 160000,
 			"recipe": {
 				"bi": 1,
@@ -139,10 +162,13 @@
 		},
 		"drink": {
 			"name": "Quầy trà đá",
-			"dish": "Trà đá · nước sâm",
-			"base_price": 10000,
+			"dish": "Ly trà đá",
+			"out": "trada",
+			"base_price": 5000,
 			"cycle": 8.0,
 			"batch": 3,
+			"keep": 60,
+			"keep_step": 12,
 			"up_cost": 60000,
 			"recipe": {
 				"ice": 1,
@@ -175,245 +201,92 @@
 				213000000,
 				309000000
 			]
-		},
-		"combo": {
-			"name": "Bàn cơm phần",
-			"dish": "Cơm tấm thập cẩm",
-			"base_price": 85000,
-			"cycle": 20.0,
-			"batch": 2,
-			"up_cost": 320000,
-			"recipe": {
-				"rice": 1,
-				"pork": 1,
-				"bi": 1,
-				"cha": 1,
-				"egg": 1
+		}
+	},
+	"menu": {
+		"com_suon": {
+			"name": "Cơm tấm sườn",
+			"desc": "1 phần cơm + 1 miếng sườn nướng",
+			"price": 45000,
+			"weight": 1.0,
+			"needs": {
+				"com": 1,
+				"grilled": 1
 			},
-			"up_costs": [
-				0,
-				320000,
-				464000,
-				673000,
-				976000,
-				1410000,
-				2050000,
-				2970000,
-				4310000,
-				6250000,
-				9070000,
-				13100000,
-				19100000,
-				27600000,
-				40100000,
-				58100000,
-				84300000,
-				122000000,
-				177000000,
-				257000000,
-				373000000,
-				540000000,
-				783000000,
-				1140000000,
-				1650000000
+			"where": [
+				"street",
+				"aircon",
+				"rooftop"
 			]
 		},
-		"dessert": {
-			"name": "Quầy chè",
-			"dish": "Chè · sương sáo",
-			"base_price": 25000,
-			"cycle": 12.0,
-			"batch": 3,
-			"up_cost": 210000,
-			"recipe": {
-				"veg": 1,
-				"tea": 1
+		"com_bi_cha": {
+			"name": "Cơm tấm bì chả",
+			"desc": "1 phần cơm + 1 phần bì chả",
+			"price": 40000,
+			"weight": 1.0,
+			"needs": {
+				"com": 1,
+				"bicha": 1
 			},
-			"up_costs": [
-				0,
-				210000,
-				304000,
-				442000,
-				640000,
-				928000,
-				1350000,
-				1950000,
-				2830000,
-				4100000,
-				5950000,
-				8630000,
-				12500000,
-				18100000,
-				26300000,
-				38100000,
-				55300000,
-				80200000,
-				116000000,
-				169000000,
-				244000000,
-				354000000,
-				514000000,
-				745000000,
-				1080000000
+			"where": [
+				"street",
+				"aircon",
+				"rooftop"
 			]
 		},
-		"office": {
-			"name": "Cơm hộp văn phòng",
-			"dish": "Cơm hộp giao đi",
-			"base_price": 60000,
-			"cycle": 16.0,
-			"batch": 3,
-			"up_cost": 400000,
-			"recipe": {
-				"rice": 1,
-				"pork": 1,
-				"veg": 1
+		"tra_da": {
+			"name": "Trà đá",
+			"desc": "1 ly trà đá",
+			"price": 5000,
+			"weight": 0.25,
+			"needs": {
+				"trada": 1
 			},
-			"up_costs": [
-				0,
-				400000,
-				580000,
-				841000,
-				1220000,
-				1770000,
-				2560000,
-				3720000,
-				5390000,
-				7820000,
-				11300000,
-				16400000,
-				23800000,
-				34600000,
-				50100000,
-				72600000,
-				105000000,
-				153000000,
-				221000000,
-				321000000,
-				466000000,
-				675000000,
-				979000000,
-				1420000000,
-				2060000000
+			"where": [
+				"street",
+				"aircon",
+				"rooftop"
 			]
 		},
-		"bbq": {
-			"name": "Lò than hoa",
-			"dish": "Sườn nướng than",
-			"base_price": 140000,
-			"cycle": 22.0,
-			"batch": 2,
-			"up_cost": 900000,
-			"recipe": {
-				"pork": 2,
-				"veg": 1
+		"thap_cam": {
+			"name": "Cơm tấm thập cẩm",
+			"desc": "1 miếng sườn + 1 phần bì chả",
+			"price": 65000,
+			"weight": 1.0,
+			"needs": {
+				"grilled": 1,
+				"bicha": 1
 			},
-			"up_costs": [
-				0,
-				900000,
-				1300000,
-				1890000,
-				2740000,
-				3980000,
-				5770000,
-				8360000,
-				12100000,
-				17600000,
-				25500000,
-				37000000,
-				53600000,
-				77700000,
-				113000000,
-				163000000,
-				237000000,
-				344000000,
-				498000000,
-				723000000,
-				1050000000,
-				1520000000,
-				2200000000,
-				3190000000,
-				4630000000
+			"where": [
+				"aircon",
+				"rooftop"
 			]
 		},
-		"vip": {
-			"name": "Bàn VIP",
-			"dish": "Set cơm tấm VIP",
-			"base_price": 220000,
-			"cycle": 30.0,
-			"batch": 1,
-			"up_cost": 1500000,
-			"recipe": {
-				"rice": 2,
-				"pork": 1,
-				"cha": 1,
-				"egg": 1
+		"com_hop": {
+			"name": "Cơm hộp giao đi",
+			"desc": "1 miếng sườn + 1 phần bì chả, shipper chở đi",
+			"price": 60000,
+			"weight": 1.0,
+			"needs": {
+				"grilled": 1,
+				"bicha": 1
 			},
-			"up_costs": [
-				0,
-				1500000,
-				2180000,
-				3150000,
-				4570000,
-				6630000,
-				9610000,
-				13900000,
-				20200000,
-				29300000,
-				42500000,
-				61600000,
-				89400000,
-				130000000,
-				188000000,
-				272000000,
-				395000000,
-				573000000,
-				831000000,
-				1200000000,
-				1750000000,
-				2530000000,
-				3670000000,
-				5320000000,
-				7720000000
+			"where": [
+				"ship"
 			]
 		},
-		"juice": {
-			"name": "Quầy nước ép",
-			"dish": "Nước ép trái cây",
-			"base_price": 45000,
-			"cycle": 12.0,
-			"batch": 3,
-			"up_cost": 600000,
-			"recipe": {
-				"veg": 1,
-				"tea": 1
+		"set_vip": {
+			"name": "Set cơm tấm VIP",
+			"desc": "1 miếng sườn + 1 phần bì chả + 1 ly trà đá",
+			"price": 90000,
+			"weight": 1.0,
+			"needs": {
+				"grilled": 1,
+				"bicha": 1,
+				"trada": 1
 			},
-			"up_costs": [
-				0,
-				600000,
-				870000,
-				1260000,
-				1830000,
-				2650000,
-				3850000,
-				5580000,
-				8090000,
-				11700000,
-				17000000,
-				24700000,
-				35700000,
-				51800000,
-				75200000,
-				109000000,
-				158000000,
-				229000000,
-				332000000,
-				482000000,
-				698000000,
-				1010000000,
-				1470000000,
-				2130000000,
-				3090000000
+			"where": [
+				"rooftop"
 			]
 		}
 	},
@@ -430,12 +303,6 @@
 			"price": 15000,
 			"pack": 50
 		},
-		"egg": {
-			"name": "Trứng gà",
-			"unit": "quả",
-			"price": 4000,
-			"pack": 100
-		},
 		"bi": {
 			"name": "Bì heo",
 			"unit": "phần",
@@ -448,23 +315,17 @@
 			"price": 10000,
 			"pack": 50
 		},
-		"veg": {
-			"name": "Đồ chua · rau",
-			"unit": "hũ",
-			"price": 3000,
-			"pack": 50
-		},
 		"tea": {
 			"name": "Trà",
-			"unit": "bình",
-			"price": 5000,
-			"pack": 50
+			"unit": "ấm",
+			"price": 800,
+			"pack": 100
 		},
 		"ice": {
 			"name": "Đá bi lạnh",
-			"unit": "bao",
-			"price": 3000,
-			"pack": 50
+			"unit": "ly",
+			"price": 700,
+			"pack": 100
 		},
 		"coal": {
 			"name": "Than đá",
@@ -474,14 +335,32 @@
 		},
 		"gas": {
 			"name": "Gas",
-			"unit": "bình",
-			"price": 12000,
-			"pack": 20
+			"unit": "suất",
+			"price": 2000,
+			"pack": 100
+		},
+		"com": {
+			"name": "Phần cơm tấm",
+			"unit": "phần",
+			"price": 10000,
+			"pack": 0
+		},
+		"bicha": {
+			"name": "Phần bì chả",
+			"unit": "phần",
+			"price": 16000,
+			"pack": 0
+		},
+		"trada": {
+			"name": "Ly trà đá",
+			"unit": "ly",
+			"price": 1500,
+			"pack": 0
 		},
 		"grilled": {
 			"name": "Sườn nướng sẵn",
 			"unit": "miếng",
-			"price": 19000,
+			"price": 17000,
 			"pack": 0
 		}
 	},
@@ -500,7 +379,7 @@
 		"batch_base": 10,
 		"batch_step": 4,
 		"cycle": 24.0,
-		"coal_per_batch": 1.0,
+		"coal_per_batch": 1,
 		"up_cost": 240000.0,
 		"up_mult": 1.8,
 		"up_costs": [
@@ -714,7 +593,7 @@
 		}
 	},
 	"chung": {
-		"start_money": 3000000.0,
+		"start_money": 3000000,
 		"day_duration": 180.0,
 		"customer_patience": 28.0,
 		"manager_cost_mult": 6.0,
@@ -723,7 +602,7 @@
 		"level_batch_every": 4,
 		"offline_max_seconds": 14400.0,
 		"offline_rate": 0.5,
-		"dry_stock_target": 200.0,
+		"dry_stock_target": 200,
 		"max_level": 25
 	}
 }

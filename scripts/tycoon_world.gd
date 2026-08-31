@@ -515,10 +515,12 @@ func _build_floor(node: Node3D, fid: String, index: int) -> void:
         _solid(index, -hw - 0.75, hd + 1.7, 0.24, 0.24)          # cột bảng hiệu
     _solid(index, hw - 0.05, hd + 0.95, 0.38, 0.38)              # lu nước đầu hè
 
-    # quầy hàng
-    var sids := GameManager.stations_on_floor(fid)
-    for i in sids.size():
-        _build_station(node, str(sids[i]), _station_slot(i, sids.size()), index)
+    # Quầy hàng. Bốn cái quầy là bếp CHUNG của cả quán nên chỉ dựng thật một dãy
+    # ngoài vỉa hè; mấy khu trên chỉ có mặt quầy trống để người bưng đứng lấy đĩa.
+    if index == 0:
+        var sids := GameManager.stations_on_floor(fid)
+        for i in sids.size():
+            _build_station(node, str(sids[i]), _station_slot(i, sids.size()), index)
 
     # Bàn ăn có sẵn của quán. Kê lùi xuống phía trước và dồn vào giữa để chừa hai
     # lối đi thật: một lối chạy dọc trước mặt quầy bếp, một lối rộng bên phải nối
@@ -1798,7 +1800,8 @@ func _build_manager(node: Node3D, fid: String, index: int) -> void:
 
 func _populate(node: Node3D, fid: String, index: int) -> void:
     var hd := ROOM_D * 0.5
-    var sids: Array = GameManager.stations_on_floor(fid)
+    # Bếp chỉ có một dãy ngoài vỉa hè, nên người đứng bếp cũng chỉ có ở đó.
+    var sids: Array = GameManager.stations_on_floor(fid) if index == 0 else []
     # nhớ luôn quầy đó nằm ở ô thứ mấy, để người đứng đúng sau quầy của mình
     var open_here: Array = []
     for i in sids.size():
@@ -2307,6 +2310,14 @@ func _update_server(a: Dictionary, node: Node3D, rig: Dictionary, t: float, delt
             if guest == null:
                 a["t"] = wait_for
                 return
+            # Tới lúc này mới GỌI MÓN: trừ đúng số nguyên phần cơm, phần bì chả,
+            # ly trà đá, miếng sườn trong kho. Bếp chưa ghép nổi suất nào thì
+            # đứng chờ tiếp chứ không bưng khay không ra bàn.
+            var order := GameManager.take_order(fid)
+            if order.is_empty():
+                a["t"] = wait_for
+                return
+            a["order"] = order
             var g: Dictionary = guest
             g["booked"] = true
             a["guest"] = g
@@ -2343,8 +2354,9 @@ func _update_server(a: Dictionary, node: Node3D, rig: Dictionary, t: float, delt
             rig["torso"].rotation.x = 0.18
             carrying = float(a["t"]) < 0.5
             if float(a["t"]) > 0.5 and a.get("guest") != null:
-                _serve_guest(a["guest"])
+                _serve_guest(a["guest"], str(a.get("order", "")))
                 a["guest"] = null
+                a["order"] = ""
             if float(a["t"]) > 1.1:
                 a["state"] = "return"
                 a["t"] = 0.0
@@ -2383,6 +2395,13 @@ func _update_shipper(a: Dictionary, node: Node3D, rig: Dictionary, t: float, del
             node.rotation.y = PI
             var fid := str(GameManager.FLOORS[floor_i]["id"])
             if float(a["t"]) > clampf(GameManager.service_time(fid) * 1.6, 2.5, 8.0):
+                # Chỉ chạy khi trong tay đã có hộp cơm thật: bếp hết hàng thì
+                # shipper đứng đợi ở quầy chứ không phóng đi tay không.
+                var order := GameManager.take_order("ship")
+                if order.is_empty():
+                    a["t"] = 0.0
+                    return
+                a["order"] = order
                 a["path"] = _route(node.position, _exit_point(floor_i, slot + 1), true, floor_i)
                 a["state"] = "go"
                 a["t"] = 0.0
@@ -2404,6 +2423,12 @@ func _update_shipper(a: Dictionary, node: Node3D, rig: Dictionary, t: float, del
                 a["t"] = 0.0
         "back":
             if _follow_path(a, node, rig, t, delta, 1.75):
+                # về tới quầy, giao xong chuyến đó: giờ mới có tiền hộp cơm
+                var pay := GameManager.sell_dish(str(a.get("order", "")))
+                a["order"] = ""
+                if pay > 0:
+                    spawn_float("%s ₫" % UIKit.money(pay),
+                        node.global_position + Vector3(0, 1.9, 0), C_GOLD)
                 a["state"] = "load"
                 a["t"] = 0.0
 
@@ -2536,10 +2561,12 @@ func _guest_waiting(guest) -> bool:
 
 
 ## Đặt đĩa xuống: tắt vòng đỏ, khách chuyển sang ăn.
-func _serve_guest(guest) -> void:
+func _serve_guest(guest, order: String = "") -> void:
     if not _guest_waiting(guest):
         return
     var g: Dictionary = guest
+    # nhớ luôn khách này ăn món gì: ăn xong mới tính tiền đúng món đó
+    g["order"] = order
     g["state"] = "eat"
     g["t"] = 0.0
     g["booked"] = false
@@ -2707,9 +2734,16 @@ func _update_customer(a: Dictionary, node: Node3D, rig: Dictionary, t: float, de
             (meal["bowl"] as Node3D).visible = not chatty
             (meal["sticks"] as Node3D).visible = not chatty
             if float(a["t"]) > 11.0:
-                # ăn xong, no nê ra về: quán được tiếng thơm
+                # Ăn xong mới trả tiền — và trả trọn số nguyên đồng đúng giá món
+                # đã gọi. Quán vừa được tiền vừa được tiếng thơm, nên chữ bay lên
+                # gộp cả hai: "45.000 ₫ + 2 uy tín".
+                var pay := GameManager.sell_dish(str(a.get("order", "")))
                 var gained := GameManager.customer_finished()
-                spawn_float("+%d uy tín" % gained,
+                a["order"] = ""
+                var toast := "+%d uy tín" % gained
+                if pay > 0:
+                    toast = "%s ₫ + %d uy tín" % [UIKit.money(pay), gained]
+                spawn_float(toast,
                     node.global_position + Vector3(0, 1.9, 0), C_OK)
                 _set_meter(a.get("meter"), 0.0, false)
                 _show_plate(a, false)

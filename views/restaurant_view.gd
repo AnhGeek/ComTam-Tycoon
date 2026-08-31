@@ -92,9 +92,6 @@ func _process(delta: float) -> void:
 	# đặt lại chỗ đứng của ngôi sao mỗi khung hình: lần bố trí đầu tiên thanh còn
 	# chưa có bề ngang thật, tính một lần lúc dựng là sai chỗ
 	_place_rep_star()
-	var pend := GameManager.total_pending()
-	collect_btn.disabled = pend < 1.0
-	collect_btn.text = ("THU " + UIKit.money_short(pend) + " ₫") if pend >= 1.0 else "CHƯA CÓ TIỀN CHỜ"
 	_sync_strip()
 	if toast_timer > 0.0:
 		toast_timer -= delta
@@ -396,10 +393,13 @@ func _build_dock() -> Control:
 	row.add_theme_constant_override("separation", 8)
 	v.add_child(row)
 
-	collect_btn = UIKit.dark_button("THU TIỀN", UIKit.NEON_GREEN, Color("06301a"), 15)
+	# Tiền giờ chảy thẳng vô ví lúc khách ăn xong nên chẳng còn gì để "thu". Chỗ
+	# nút đó đổi thành cửa vào bảng nâng cấp — bấm nó y hệt chạm một cái quầy nhỏ
+	# trong khu đang xem, khỏi phải nheo mắt tìm cái quầy giữa cảnh 3D.
+	collect_btn = UIKit.dark_button("TRANG BỊ QUÁN", UIKit.NEON_BLUE, Color.WHITE, 15)
 	collect_btn.custom_minimum_size = Vector2(0, UIKit.px(46))
 	collect_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	collect_btn.pressed.connect(_on_collect_all)
+	collect_btn.pressed.connect(_on_shop_upgrades)
 	row.add_child(collect_btn)
 
 	furni_btn = UIKit.dark_button("BÀN GHẾ", UIKit.NEON_GOLD, Color("40300a"), 13)
@@ -500,10 +500,21 @@ func _on_floor_button(index: int) -> void:
 	_toast(str(f["name"]) + " · " + str(f["note"]))
 
 
-func _on_collect_all() -> void:
-	var total := GameManager.collect_all()
-	if total > 0.0:
-		_toast("Đã thu " + UIKit.money(total) + " ₫")
+## Mở bảng nâng cấp của khu đang xem. Bảng này vốn dĩ mở ra khi chạm vào một cái
+## quầy, mà quầy nào cũng có sẵn hàng ô chọn quầy ở dưới, nên cứ lấy quầy đầu tiên
+## còn mở của khu là người chơi đi tới đâu cũng được.
+func _on_shop_upgrades() -> void:
+	var fid := str(GameManager.FLOORS[world.current_floor() if world != null else 0]["id"])
+	var sids: Array = GameManager.stations_on_floor(fid)
+	if sids.is_empty():
+		_toast("Khu này chưa mở, chưa có gì để trang bị")
+		return
+	var pick := str(sids[0])
+	for sid in sids:
+		if GameManager.is_station_open(str(sid)):
+			pick = str(sid)
+			break
+	_show_station_card(pick, "upgrade")
 
 
 func _on_collected(amount: float) -> void:
@@ -640,14 +651,15 @@ func _sync_strip() -> void:
 		else:
 			# đang chờ bán bao nhiêu phần + tiền đang nằm ở quầy
 			var waiting := int(GameManager.pending_portions.get(sid, 0.0))
-			var cash := float(GameManager.pending.get(sid, 0.0))
 			if str(sid) == "grill":
 				# lò giữ nhiệt: thứ đáng nhìn nhất là còn mấy miếng trong lò
-				note.text = "%d/%d miếng · %d phần chờ" % [
+				note.text = "%d/%d miếng trong lò" % [
 					int(GameManager.stock.get("grilled", 0.0)),
-					GameManager.warmer_capacity(), waiting]
+					GameManager.warmer_capacity()]
 			else:
-				note.text = "%d phần chờ · %s ₫" % [waiting, UIKit.money_short(cash)]
+				# quầy không bán thẳng cho khách nữa: nó chất sẵn phần cơm / phần bì
+				# chả / ly trà đá trong kho, đầy kho là người đứng quầy nghỉ tay
+				note.text = "%d/%d phần sẵn" % [waiting, GameManager.station_keep(str(sid))]
 			note.add_theme_color_override("font_color", UIKit.D_MUTED)
 
 

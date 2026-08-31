@@ -107,12 +107,14 @@ func _build_prices() -> void:
 		_toast("Đã áp dụng giá đề xuất"))
 	list_box.add_child(suggest)
 
-	for sid in GameManager.STATIONS:
+	# Liệt kê MENU chứ không phải quầy: quầy chỉ làm ra phần cơm, phần bì chả...
+	# còn cái có giá bán là mấy món bưng ra cho khách.
+	for sid in GameManager.MENU:
 		list_box.add_child(_price_row(sid))
 
 
 func _price_row(sid: String) -> Control:
-	var data: Dictionary = GameManager.STATIONS[sid]
+	var data: Dictionary = GameManager.MENU[sid]
 	var card := UIKit.card(11)
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 6)
@@ -125,14 +127,15 @@ func _price_row(sid: String) -> Control:
 	names.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	names.add_theme_constant_override("separation", 2)
 	top.add_child(names)
-	names.add_child(UIKit.label(str(data["dish"]), 15, UIKit.ACCENT_900))
-	names.add_child(UIKit.muted(str(data["name"]) + " · vốn " + UIKit.money(GameManager.station_cost_per_portion(sid)) + " ₫", 11))
+	names.add_child(UIKit.label(str(data["name"]), 15, UIKit.ACCENT_900))
+	names.add_child(UIKit.muted(str(data["desc"]) + " · vốn "
+		+ UIKit.money(GameManager.dish_cost(sid)) + " ₫", 11))
 
 	var spin := SpinBox.new()
-	spin.min_value = GameManager.station_cost_per_portion(sid) * 1.05
-	spin.max_value = float(data["base_price"]) * 4.0
+	spin.min_value = ceil(GameManager.dish_cost(sid) * 1.05 / 1000.0) * 1000.0
+	spin.max_value = float(data["price"]) * 4.0
 	spin.step = 1000.0
-	spin.value = GameManager.station_price(sid)
+	spin.value = float(GameManager.dish_price(sid))
 	spin.custom_minimum_size = Vector2(190, 68)
 	spin.select_all_on_focus = true
 	UIKit.style_spinbox(spin)
@@ -151,7 +154,7 @@ func _price_row(sid: String) -> Control:
 	appeal.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	stats.add_child(appeal)
 
-	if not GameManager.is_station_open(sid):
+	if not GameManager.dish_open(sid):
 		card.modulate = Color(1, 1, 1, 0.55)
 		spin.editable = false
 
@@ -164,11 +167,11 @@ func _update_row_labels(sid: String) -> void:
 	if not price_rows.has(sid):
 		return
 	var r: Dictionary = price_rows[sid]
-	var margin := GameManager.station_price(sid) - GameManager.station_cost_per_portion(sid)
+	var margin := float(GameManager.dish_price(sid)) - GameManager.dish_cost(sid)
 	var profit: Label = r["profit"]
 	profit.text = "Lãi %s ₫ mỗi phần" % UIKit.money(margin)
 	profit.add_theme_color_override("font_color", UIKit.OK if margin > 0.0 else UIKit.BAD)
-	var ap := GameManager.price_appeal(sid)
+	var ap := GameManager.dish_appeal(sid)
 	var word := "rất đông khách"
 	if ap < 0.5:
 		word = "ít khách"
@@ -184,10 +187,10 @@ func _sync_rows() -> void:
 		var r: Dictionary = price_rows[sid]
 		var spin: SpinBox = r["spin"]
 		spin.set_block_signals(true)
-		spin.value = GameManager.station_price(sid)
+		spin.value = float(GameManager.dish_price(sid))
 		spin.set_block_signals(false)
-		spin.editable = GameManager.is_station_open(sid)
-		(r["card"] as Control).modulate = Color(1, 1, 1, 1.0 if GameManager.is_station_open(sid) else 0.55)
+		spin.editable = GameManager.dish_open(sid)
+		(r["card"] as Control).modulate = Color(1, 1, 1, 1.0 if GameManager.dish_open(sid) else 0.55)
 		_update_row_labels(sid)
 
 

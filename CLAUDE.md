@@ -26,7 +26,7 @@ chắc chắn không có lỗi runtime trong vòng đời của khách.
 ### `data/balance.json` — bảng số cân bằng game
 
 Mọi con số cân bằng nằm ở đây, sửa xong chạy `./install.sh` là ra APK mới, **không
-phải đụng vào code**: giá bán và giá nâng cấp từng quầy, công thức nguyên liệu,
+phải đụng vào code**: giá bán từng món trong menu, giá nâng cấp từng quầy, công thức nguyên liệu,
 giá nguyên liệu, giá mở khu, lò than, lò giữ nhiệt, lương nhân viên, giá trang
 trí/bàn ghế, thưởng nhiệm vụ, và mấy hệ số chung (tiền vốn, độ dài một ngày, độ
 kiên nhẫn của khách, hệ số nâng cấp mỗi cấp).
@@ -52,6 +52,47 @@ Vì vậy mấy bảng số trong `game_manager.gd` phải là `static var` ch�
 `const` (const thì không ghi đè được). Và `export_presets.cfg` có
 `include_filter="data/*.json"` — JSON không phải "resource" của Godot nên thiếu
 dòng đó là file không được đóng gói vào APK.
+
+### Dây chuyền hai tầng: quầy làm ra phần, menu bán ra tiền
+
+Quầy **không bán thẳng cho khách**. Mỗi quầy chỉ làm ra một thứ *bán thành phẩm*
+(khoá `out` trong `stations`), chất vào kho chung; `MENU` mới là danh sách món
+bưng ra bàn và là chỗ duy nhất có giá bán.
+
+| Quầy | Ăn vào | Làm ra |
+|---|---|---|
+| Nồi cơm tấm (`rice`) | gạo + gas | `com` — phần cơm |
+| Bàn bì & chả (`prep`) | bì heo + chả trứng | `bicha` — phần bì chả |
+| Quầy trà đá (`drink`) | đá bi + trà | `trada` — ly trà đá |
+| Lò nướng thịt (`grill`) | — | không làm ra gì, chỉ **giữ nhiệt** `grilled` |
+| Lò than vỉa hè | than + sườn sống | `grilled` — miếng sườn nướng |
+
+Sáu món trong `MENU`: cơm tấm sườn (`com`+`grilled`) · cơm tấm bì chả
+(`com`+`bicha`) · trà đá (`trada`) · cơm tấm thập cẩm và cơm hộp giao đi
+(`grilled`+`bicha`) · set cơm tấm VIP (`grilled`+`bicha`+`trada`). Khoá `where`
+nói món đó bán ở khu nào; `"ship"` nghĩa là chỉ shipper chở đi.
+
+Vòng tiền, đúng theo thứ tự này:
+
+1. Người bưng (hoặc shipper) chờ đủ `service_time` rồi gọi `take_order(where)`
+   — hàm này bốc một món còn đủ hàng và **trừ ngay số nguyên** bán thành phẩm.
+   Bếp chưa ghép nổi suất nào thì họ đứng chờ tiếp, không bưng khay không.
+2. Khách **ăn xong** mới trả tiền: `sell_dish(did)` cộng trọn giá món vào ví,
+   luôn là số nguyên đồng. Chữ bay lên đầu khách gộp cả hai: `"45.000 ₫ + 2 uy tín"`.
+3. Chờ lâu quá bỏ về thì vẫn `-Y uy tín` như cũ, không mất tiền vì chưa thu.
+
+Không còn chỗ nào bán theo phần lẻ: mọi nguyên liệu, mọi suất, mọi khoản tiền
+đều là số nguyên (`_spend` cũng làm tròn).
+
+**Bốn quầy là bếp chung của cả quán**: `stations_on_floor()` trả về đủ bốn quầy
+cho mọi khu đã mở, nhưng `tycoon_world` chỉ **dựng thật một dãy quầy và người
+đứng bếp ở khu vỉa hè** (`index == 0`); khu trên chỉ có mặt quầy trống cho người
+bưng đứng lấy đĩa. Khu bây giờ chỉ còn là chỗ ngồi và là nơi quyết định khách gọi
+món gì.
+
+Bong bóng tiền trên quầy (`pending`, `collect()`, nút "THU … ₫") **không còn được
+rót vào nữa** vì tiền chảy thẳng vô ví. Bộ khung vẫn nằm đó, quản lý quầy giờ chỉ
+còn tác dụng cho thu nhập lúc vắng mặt.
 
 ### `install.sh`
 

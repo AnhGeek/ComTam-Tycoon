@@ -34,18 +34,27 @@ static var FLOORS := [
 static var INGREDIENTS := {
 	"rice": {"name": "Gạo tấm", "unit": "kg", "price": 8000, "pack": 50},
 	"pork": {"name": "Sườn heo", "unit": "miếng", "price": 15000, "pack": 50},
-	"egg": {"name": "Trứng gà", "unit": "quả", "price": 4000, "pack": 100},
 	"bi": {"name": "Bì heo", "unit": "phần", "price": 6000, "pack": 50},
 	"cha": {"name": "Chả trứng", "unit": "miếng", "price": 10000, "pack": 50},
-	"veg": {"name": "Đồ chua · rau", "unit": "hũ", "price": 3000, "pack": 50},
-	"tea": {"name": "Trà", "unit": "bình", "price": 5000, "pack": 50},
-	"ice": {"name": "Đá bi lạnh", "unit": "bao", "price": 3000, "pack": 50},
+	"tea": {"name": "Trà", "unit": "ấm", "price": 800, "pack": 100},
+	"ice": {"name": "Đá bi lạnh", "unit": "ly", "price": 700, "pack": 100},
 	"coal": {"name": "Than đá", "unit": "bao", "price": 24000, "pack": 20},
-	"gas": {"name": "Gas", "unit": "bình", "price": 12000, "pack": 20},
-	## Sườn nướng sẵn không mua được ngoài chợ: phải tự nướng ở lò than vỉa hè.
-	"grilled": {"name": "Sườn nướng sẵn", "unit": "miếng", "price": 19000, "pack": 0,
+	"gas": {"name": "Gas", "unit": "suất", "price": 2000, "pack": 100},
+	## Bốn thứ dưới đây là BÁN THÀNH PHẨM: chợ không bán, quầy trong quán tự làm
+	## ra rồi menu mới lấy chúng ghép thành món bưng cho khách. Giá ghi ở đây chỉ
+	## để tính vốn một suất, không phải giá mua.
+	"com": {"name": "Phần cơm tấm", "unit": "phần", "price": 10000, "pack": 0,
+		"shop": false},
+	"bicha": {"name": "Phần bì chả", "unit": "phần", "price": 16000, "pack": 0,
+		"shop": false},
+	"trada": {"name": "Ly trà đá", "unit": "ly", "price": 1500, "pack": 0,
+		"shop": false},
+	"grilled": {"name": "Sườn nướng sẵn", "unit": "miếng", "price": 17000, "pack": 0,
 		"shop": false},
 }
+
+## Bán thành phẩm quầy tự làm ra — không mua được, chỉ nấu ra hoặc nướng ra.
+static var MADE_ITEMS := ["com", "bicha", "trada", "grilled"]
 
 
 ## Chỉ những thứ bán ngoài chợ mới hiện trong màn Mua sắm.
@@ -56,42 +65,60 @@ static func shop_ingredients() -> Array:
 			out.append(id)
 	return out
 
-## Mỗi quầy = một món; vị trí trong không gian 3D do TycoonWorld tự xếp theo khu.
+## Quầy KHÔNG bán thẳng cho khách nữa: mỗi quầy chỉ làm ra một thứ bán thành
+## phẩm ("out") chất sẵn trong kho, rồi MENU bên dưới mới ghép chúng thành món
+## bưng ra bàn. Cả bốn quầy đều là bếp chung của quán nên đứng ở khu vỉa hè;
+## khách khu nào cũng ăn cơm nấu từ cái bếp đó.
+##   "out"  = thứ quầy làm ra, rỗng nghĩa là quầy không nấu (lò giữ nhiệt)
+##   "keep" = quầy trữ sẵn được mấy phần, mỗi cấp nới thêm "keep_step"
+##   "base_price" chỉ để tính lãi hiện trên bảng nâng cấp, không phải giá bán.
 static var STATIONS := {
-	"grill": {"floor": "street", "name": "Lò nướng thịt", "dish": "Cơm tấm sườn", "glyph": "▤",
-		"recipe": {"grilled": 1}, "base_price": 45000, "cycle": 12.0,
-		"batch": 2, "up_cost": 120000},
-	"rice": {"floor": "street", "name": "Nồi cơm tấm", "dish": "Cơm tấm trứng", "glyph": "▦",
-		"recipe": {"rice": 1, "gas": 1}, "base_price": 35000, "cycle": 10.0,
-		"batch": 2, "up_cost": 90000},
-	"prep": {"floor": "street", "name": "Bàn bì & chả", "dish": "Cơm tấm bì chả", "glyph": "▩",
+	"grill": {"floor": "street", "name": "Lò nướng thịt", "dish": "Sườn nướng sẵn", "glyph": "▤",
+		# quầy này không nấu gì hết: nó là cái lò giữ nhiệt, chỉ CHỨA sườn do lò
+		# than ngoài vỉa hè nướng ra. Công thức {grilled: 1} để lại là để người
+		# đứng quầy biết lúc nào hết hàng mà nghỉ tay, và để màn hình báo động.
+		"out": "", "recipe": {"grilled": 1}, "base_price": 25000, "cycle": 12.0,
+		"batch": 2, "keep": 0, "keep_step": 0, "up_cost": 120000},
+	"rice": {"floor": "street", "name": "Nồi cơm tấm", "dish": "Phần cơm tấm", "glyph": "▦",
+		"out": "com", "recipe": {"rice": 1, "gas": 1}, "base_price": 20000, "cycle": 10.0,
+		"batch": 2, "keep": 40, "keep_step": 8, "up_cost": 90000},
+	"prep": {"floor": "street", "name": "Bàn bì & chả", "dish": "Phần bì chả", "glyph": "▩",
 		# đúng như cái tên: bàn này thái BÌ và CHẢ, hết một trong hai là đứng tay
-		"recipe": {"bi": 1, "cha": 1}, "base_price": 50000, "cycle": 15.0,
-		"batch": 2, "up_cost": 160000},
-	"drink": {"floor": "street", "name": "Quầy trà đá", "dish": "Trà đá · nước sâm", "glyph": "▥",
-		"recipe": {"ice": 1, "tea": 1}, "base_price": 10000, "cycle": 8.0,
-		"batch": 3, "up_cost": 60000},
-
-	"combo": {"floor": "aircon", "name": "Bàn cơm phần", "dish": "Cơm tấm thập cẩm", "glyph": "▣",
-		"recipe": {"rice": 1, "pork": 1, "bi": 1, "cha": 1, "egg": 1}, "base_price": 85000, "cycle": 20.0,
-		"batch": 2, "up_cost": 320000},
-	"dessert": {"floor": "aircon", "name": "Quầy chè", "dish": "Chè · sương sáo", "glyph": "◍",
-		"recipe": {"veg": 1, "tea": 1}, "base_price": 25000, "cycle": 12.0,
-		"batch": 3, "up_cost": 210000},
-	"office": {"floor": "aircon", "name": "Cơm hộp văn phòng", "dish": "Cơm hộp giao đi", "glyph": "▤",
-		"recipe": {"rice": 1, "pork": 1, "veg": 1}, "base_price": 60000, "cycle": 16.0,
-		"batch": 3, "up_cost": 400000},
-
-	"bbq": {"floor": "rooftop", "name": "Lò than hoa", "dish": "Sườn nướng than", "glyph": "▤",
-		"recipe": {"pork": 2, "veg": 1}, "base_price": 140000, "cycle": 22.0,
-		"batch": 2, "up_cost": 900000},
-	"vip": {"floor": "rooftop", "name": "Bàn VIP", "dish": "Set cơm tấm VIP", "glyph": "✦",
-		"recipe": {"rice": 2, "pork": 1, "cha": 1, "egg": 1}, "base_price": 220000, "cycle": 30.0,
-		"batch": 1, "up_cost": 1500000},
-	"juice": {"floor": "rooftop", "name": "Quầy nước ép", "dish": "Nước ép trái cây", "glyph": "▥",
-		"recipe": {"veg": 1, "tea": 1}, "base_price": 45000, "cycle": 12.0,
-		"batch": 3, "up_cost": 600000},
+		"out": "bicha", "recipe": {"bi": 1, "cha": 1}, "base_price": 30000, "cycle": 15.0,
+		"batch": 2, "keep": 40, "keep_step": 8, "up_cost": 160000},
+	"drink": {"floor": "street", "name": "Quầy trà đá", "dish": "Ly trà đá", "glyph": "▥",
+		"out": "trada", "recipe": {"ice": 1, "tea": 1}, "base_price": 5000, "cycle": 8.0,
+		"batch": 3, "keep": 60, "keep_step": 12, "up_cost": 60000},
 }
+
+## MENU — mấy món THẬT SỰ bán ra tiền. Khách ngồi bàn gọi một món hợp với khu
+## mình đang ngồi, người phục vụ trừ đúng số nguyên bán thành phẩm trong kho rồi
+## bưng ra; ăn xong khách mới trả tiền.
+##   "needs"  = bán thành phẩm tốn cho MỘT suất, luôn là số nguyên
+##   "where"  = khu nào có khách gọi món này; "ship" nghĩa là chỉ shipper giao đi
+##   "weight" = mười người vào quán thì mấy người gọi món này. Trà đá để thấp vì
+##              ít ai vào quán cơm chỉ uống mỗi ly trà đá.
+static var MENU := {
+	"com_suon": {"name": "Cơm tấm sườn", "desc": "1 phần cơm + 1 miếng sườn nướng",
+		"price": 45000, "weight": 1.0, "needs": {"com": 1, "grilled": 1},
+		"where": ["street", "aircon", "rooftop"]},
+	"com_bi_cha": {"name": "Cơm tấm bì chả", "desc": "1 phần cơm + 1 phần bì chả",
+		"price": 40000, "weight": 1.0, "needs": {"com": 1, "bicha": 1},
+		"where": ["street", "aircon", "rooftop"]},
+	"tra_da": {"name": "Trà đá", "desc": "1 ly trà đá",
+		"price": 5000, "weight": 0.25, "needs": {"trada": 1},
+		"where": ["street", "aircon", "rooftop"]},
+	"thap_cam": {"name": "Cơm tấm thập cẩm", "desc": "1 miếng sườn + 1 phần bì chả",
+		"price": 65000, "weight": 1.0, "needs": {"grilled": 1, "bicha": 1},
+		"where": ["aircon", "rooftop"]},
+	"com_hop": {"name": "Cơm hộp giao đi", "desc": "1 miếng sườn + 1 phần bì chả, shipper chở đi",
+		"price": 60000, "weight": 1.0, "needs": {"grilled": 1, "bicha": 1},
+		"where": ["ship"]},
+	"set_vip": {"name": "Set cơm tấm VIP", "desc": "1 miếng sườn + 1 phần bì chả + 1 ly trà đá",
+		"price": 90000, "weight": 1.0, "needs": {"grilled": 1, "bicha": 1, "trada": 1},
+		"where": ["rooftop"]},
+}
+
 
 ## Lò than vỉa hè: nướng cả mẻ sườn cùng lúc, xong thì bưng vào quầy trong quán.
 ## Nâng cấp lò = mỗi mẻ nướng được nhiều miếng hơn.
@@ -111,7 +138,7 @@ static var WARMER_UP_COST := 200000.0
 ## Tủ lạnh: mấy thứ tươi sống (sườn, trứng, bì, chả) trữ được bao nhiêu là do
 ## kho lạnh quyết định. Mỗi KHU tự mua tủ của khu mình như đồ trang trí, tủ của
 ## khu nào cũng góp chỗ vào cái kho chung của quán.
-static var COLD_ITEMS := ["pork", "egg", "bi", "cha"]
+static var COLD_ITEMS := ["pork", "bi", "cha"]
 static var DRY_STOCK_TARGET := 200  # nhập nhanh thì chất đồ khô (gạo, than, gas...) tới chừng này
 static var FRIDGE_CAP_BASE := 220   # trữ tạm được chừng này mỗi món khi chưa có tủ nào
 static var FRIDGE_SLOT := 180       # mỗi cái tủ cấp 1 trữ thêm chừng này cho mỗi món
@@ -234,6 +261,12 @@ var grill_level := 1                # cấp lò than vỉa hè
 var warmer_level := 1               # cấp lò giữ nhiệt trong quầy
 var grill_progress := 0.0           # mẻ đang nướng, 0..1
 
+## Chỗ lẻ của công thức chưa đủ để rút khỏi kho. Công thức ghi được số lẻ (0.5 kg
+## gạo một dĩa chẳng hạn) nhưng KHO thì luôn là số nguyên, nên phần lẻ nằm chờ ở
+## đây: cứ đủ một đơn vị mới trừ kho một đơn vị.
+##   ing_debt[ingredient_id] = phần lẻ còn nợ, luôn trong khoảng 0..1
+var ing_debt: Dictionary = {}
+
 var stats: Dictionary = {}       # chỉ số cộng dồn cho nhiệm vụ
 var claimed: Dictionary = {}     # mission_id -> đã nhận thưởng
 var last_seen := 0.0             # unix time lần cuối thoát game
@@ -274,9 +307,13 @@ func _load_balance() -> void:
 	var d: Dictionary = raw
 
 	_merge_rows(d.get("stations", {}), STATIONS,
-		{"name": TYPE_STRING, "dish": TYPE_STRING, "base_price": TYPE_FLOAT,
-		"cycle": TYPE_FLOAT, "batch": TYPE_INT, "up_cost": TYPE_FLOAT,
+		{"name": TYPE_STRING, "dish": TYPE_STRING, "out": TYPE_STRING,
+		"base_price": TYPE_FLOAT, "cycle": TYPE_FLOAT, "batch": TYPE_INT,
+		"keep": TYPE_INT, "keep_step": TYPE_INT, "up_cost": TYPE_FLOAT,
 		"recipe": TYPE_DICTIONARY, "up_costs": TYPE_ARRAY})
+	_merge_rows(d.get("menu", {}), MENU,
+		{"name": TYPE_STRING, "desc": TYPE_STRING, "price": TYPE_INT,
+		"weight": TYPE_FLOAT, "needs": TYPE_DICTIONARY, "where": TYPE_ARRAY})
 	_merge_rows(d.get("ingredients", {}), INGREDIENTS,
 		{"name": TYPE_STRING, "unit": TYPE_STRING, "price": TYPE_FLOAT, "pack": TYPE_INT})
 	_merge_rows(d.get("staff", {}), STAFF,
@@ -398,15 +435,18 @@ func _reset_defaults() -> void:
 	for id in INGREDIENTS:
 		stock[id] = 150.0
 	stock["coal"] = 40.0
-	stock["grilled"] = 0.0      # sườn nướng sẵn phải tự nướng, không có sẵn trong kho
+	# bán thành phẩm phải tự nấu tự nướng, mở quán ra là kho trống trơn
+	for id in MADE_ITEMS:
+		stock[id] = 0.0
 	prices.clear()
 	levels.clear()
 	progress.clear()
 	pending.clear()
 	pending_portions.clear()
 	managers.clear()
+	for id in MENU:
+		prices[id] = int(MENU[id]["price"])
 	for id in STATIONS:
-		prices[id] = int(STATIONS[id]["base_price"])
 		levels[id] = 1 if STATIONS[id]["floor"] == "street" else 0
 		progress[id] = 0.0
 		pending[id] = 0.0
@@ -443,6 +483,7 @@ func _reset_defaults() -> void:
 	grill_level = 1
 	warmer_level = 1
 	grill_progress = 0.0
+	ing_debt.clear()
 	stats = {"served": 0.0, "earned": 0.0, "upgrades": 0.0, "staff": 0.0,
 		"managers": 0.0, "decor": 0.0, "floors": 1.0, "boosts": 0.0, "reputation": 50.0}
 	claimed.clear()
@@ -469,11 +510,15 @@ func is_floor_unlocked(fid: String) -> bool:
 	return bool(floors_unlocked.get(fid, false))
 
 
+## Bốn cái quầy là bếp CHUNG của cả quán: khách ngồi khu nào cũng ăn cơm nấu ra
+## từ đó, nên khu nào mở rồi cũng "có" đủ bốn quầy. Nhà bếp thì chỉ dựng thật một
+## dãy ngoài vỉa hè — chỗ đó TycoonWorld lo, xem `_build_floor`.
 func stations_on_floor(fid: String) -> Array:
+	if not is_floor_unlocked(fid):
+		return []
 	var out: Array = []
 	for id in STATIONS:
-		if STATIONS[id]["floor"] == fid:
-			out.append(id)
+		out.append(id)
 	return out
 
 
@@ -718,10 +763,13 @@ func upgrade_grill() -> bool:
 	return true
 
 
+## Giá trị một phần bán thành phẩm quầy này làm ra. Không phải giá bán cho khách
+## (giá bán nằm ở MENU) — nó chỉ để bảng nâng cấp khoe "lãi mỗi phần".
 func station_price(id: String) -> float:
-	return float(prices.get(id, STATIONS[id]["base_price"]))
+	return float(STATIONS[id]["base_price"])
 
 
+## Vốn nguyên liệu cho MỘT phần quầy này làm ra.
 func station_cost_per_portion(id: String) -> float:
 	var total := 0.0
 	var recipe: Dictionary = STATIONS[id]["recipe"]
@@ -730,14 +778,145 @@ func station_cost_per_portion(id: String) -> float:
 	return total
 
 
-func suggested_price(id: String) -> int:
-	return int(ceil(station_cost_per_portion(id) * 2.2 / 1000.0) * 1000.0)
+## Quầy trữ sẵn được mấy phần. Lò nướng thịt mượn luôn sức chứa của lò giữ nhiệt,
+## mấy quầy còn lại thì nới thêm một nấc mỗi cấp.
+func station_keep(id: String) -> int:
+	if str(STATIONS[id].get("out", "")).is_empty():
+		return warmer_capacity()
+	var lv := maxi(station_level(id), 1)
+	return int(STATIONS[id].get("keep", 40)) 		+ (lv - 1) * int(STATIONS[id].get("keep_step", 0))
 
 
-## Hệ số khách theo giá: giá càng cao càng ít khách.
-func price_appeal(id: String) -> float:
-	var ratio := station_price(id) / maxf(float(STATIONS[id]["base_price"]), 1.0)
+## Quầy đã chất đầy kho của nó chưa — đầy thì người đứng quầy nghỉ tay.
+func station_full(id: String) -> bool:
+	var out := str(STATIONS[id].get("out", ""))
+	if out.is_empty():
+		return true
+	return float(stock.get(out, 0.0)) >= float(station_keep(id))
+
+
+# ---------------- Menu: mấy món thật sự bán ra tiền ----------------
+
+## Giá bán một suất, luôn là số nguyên đồng.
+func dish_price(did: String) -> int:
+	return int(prices.get(did, MENU[did]["price"]))
+
+
+## Vốn một suất: cộng giá mấy phần bán thành phẩm ghép vào nó.
+func dish_cost(did: String) -> float:
+	var total := 0.0
+	var needs: Dictionary = MENU[did]["needs"]
+	for it in needs:
+		total += float(INGREDIENTS[it]["price"]) * float(needs[it])
+	return total
+
+
+func dish_suggested_price(did: String) -> int:
+	return int(ceil(dish_cost(did) * 2.2 / 1000.0) * 1000.0)
+
+
+## Hệ số khách theo giá: bán mắc hơn giá gốc thì ít người gọi món đó.
+func dish_appeal(did: String) -> float:
+	var ratio := float(dish_price(did)) / maxf(float(MENU[did]["price"]), 1.0)
 	return clampf(1.6 - 0.6 * ratio, 0.15, 1.4)
+
+
+## Món này hay được gọi tới đâu: độ phổ biến của món nhân với mức hút khách theo
+## giá. Bán mắc lên thì phần khách gọi món đó rơi bớt sang món khác.
+func dish_draw(did: String) -> float:
+	return maxf(float(MENU[did].get("weight", 1.0)), 0.0) * dish_appeal(did)
+
+
+## Món này bán ở đâu: tên khu, hoặc "ship" nếu chỉ shipper chở đi.
+func dish_sold_at(did: String, where: String) -> bool:
+	var list = MENU[did].get("where", [])
+	return typeof(list) == TYPE_ARRAY and (list as Array).has(where)
+
+
+## Món này đã bán được chưa: chỉ cần một khu bán nó đã mở cửa (món giao đi thì
+## lúc nào cũng bán được, shipper chạy từ vỉa hè).
+func dish_open(did: String) -> bool:
+	var list = MENU[did].get("where", [])
+	if typeof(list) != TYPE_ARRAY:
+		return false
+	for w in list:
+		if str(w) == "ship" or is_floor_unlocked(str(w)):
+			return true
+	return false
+
+
+## Quầy này còn mở và còn hàng để bán không — dùng cho chỗ hiển thị.
+func dish_ready(did: String) -> bool:
+	var needs: Dictionary = MENU[did]["needs"]
+	for it in needs:
+		if float(stock.get(it, 0.0)) < float(needs[it]):
+			return false
+	return true
+
+
+## Mấy món đang bưng ra được ở `where` ("street"/"aircon"/"rooftop"/"ship").
+func menu_ready(where: String) -> Array:
+	var out: Array = []
+	for did in MENU:
+		if dish_sold_at(str(did), where) and dish_ready(str(did)):
+			out.append(str(did))
+	return out
+
+
+## Nhận một đơn: bốc một món còn hàng ở `where` rồi TRỪ NGAY bán thành phẩm
+## (toàn số nguyên). Trả về id món, hoặc chuỗi rỗng nếu bếp không còn gì để bưng.
+## Món mắc thì ít người gọi hơn — đó là chỗ giá bán ăn vào lượng khách.
+func take_order(where: String) -> String:
+	var picks: Array = menu_ready(where)
+	if picks.is_empty():
+		return ""
+	var total := 0.0
+	for did in picks:
+		total += dish_draw(str(did))
+	var roll := randf() * total
+	var chosen := str(picks[picks.size() - 1])
+	for did in picks:
+		roll -= dish_draw(str(did))
+		if roll <= 0.0:
+			chosen = str(did)
+			break
+	var needs: Dictionary = MENU[chosen]["needs"]
+	for it in needs:
+		stock[it] = maxf(0.0, float(stock.get(it, 0.0)) - float(int(needs[it])))
+	stock_changed.emit()
+	return chosen
+
+
+## Khách ăn xong (hoặc shipper giao xong) mới trả tiền — và trả trọn số nguyên
+## đồng, không có đồng lẻ nào. Trả về số tiền vừa thu.
+func sell_dish(did: String) -> int:
+	if not MENU.has(did):
+		return 0
+	var pay := dish_price(did)
+	money += float(pay)
+	earned_today += float(pay)
+	served_today += 1
+	_bump("served")
+	_bump("earned", float(pay))
+	money_changed.emit()
+	return pay
+
+
+## Hệ số khách của một QUẦY: trung bình mức hút khách của mấy món dùng tới thứ
+## quầy đó làm ra. Bảng nâng cấp trong quán đọc con số này.
+func price_appeal(id: String) -> float:
+	var out := str(STATIONS[id].get("out", ""))
+	if out.is_empty():
+		out = "grilled"
+	var total := 0.0
+	var n := 0
+	for did in MENU:
+		var needs: Dictionary = MENU[did]["needs"]
+		if not needs.has(out):
+			continue
+		total += dish_appeal(str(did))
+		n += 1
+	return total / float(n) if n > 0 else 1.0
 
 
 ## Mở một khu là có sẵn ngần này người mỗi loại, không phải trả lương: một phục
@@ -876,12 +1055,14 @@ func floor_arrival_rate(fid: String) -> float:
 	base *= 1.0 + reputation / 100.0
 	base *= 1.0 + float(floor_ambiance(fid)) * 0.015
 	base *= 1.0 + 0.06 * float(staff_count(fid, "shipper"))
+	# bán mắc thì khách thưa: lấy trung bình mức hút khách của mấy món khu này bán
 	var appeal := 0.0
 	var n := 0
-	for id in stations_on_floor(fid):
-		if is_station_open(str(id)):
-			appeal += price_appeal(str(id))
-			n += 1
+	for did in MENU:
+		if not dish_sold_at(str(did), fid):
+			continue
+		appeal += dish_appeal(str(did))
+		n += 1
 	if n > 0:
 		base *= appeal / float(n)
 	return maxf(base, 0.5)
@@ -913,6 +1094,8 @@ func income_per_second(station_id: String = "") -> float:
 			continue
 		if not is_floor_unlocked(str(STATIONS[id]["floor"])):
 			continue
+		if str(STATIONS[id].get("out", "")).is_empty():
+			continue          # lò giữ nhiệt không nấu ra gì, không tính vào ₫/s
 		var lai := station_price(str(id)) - station_cost_per_portion(str(id))
 		total += lai * float(station_batch(str(id))) / maxf(station_cycle(str(id)), 0.1)
 	return total
@@ -1020,6 +1203,19 @@ func floor_salary(fid: String) -> float:
 	return total
 
 
+## Trừ `amount` nguyên liệu `ing` ra khỏi kho. Công thức ghi số lẻ được, nhưng
+## kho thì luôn là số nguyên: chỗ lẻ cộng dồn vào `ing_debt`, đủ một đơn vị mới
+## rút một đơn vị ra. Ghi 0.5 kg gạo một dĩa thì cứ hai dĩa mới vơi một ký.
+func _use_ingredient(ing: String, amount: float) -> void:
+	if amount <= 0.0:
+		return
+	var owed := float(ing_debt.get(ing, 0.0)) + amount
+	var take := floorf(owed)
+	ing_debt[ing] = owed - take
+	if take > 0.0:
+		stock[ing] = maxf(0.0, float(stock.get(ing, 0.0)) - take)
+
+
 func has_ingredients(id: String, times: int = 1) -> bool:
 	var recipe: Dictionary = STATIONS[id]["recipe"]
 	for ing in recipe:
@@ -1053,50 +1249,44 @@ func _process(delta: float) -> void:
 	for id in STATIONS:
 		if not is_station_open(id):
 			continue
+		# Lò nướng thịt không nấu gì: nó chỉ giữ nhiệt cho sườn của lò than.
+		var out := str(STATIONS[id].get("out", ""))
+		if out.is_empty():
+			continue
+		# Quầy chất đầy kho rồi thì đứng nghỉ, nấu ra nữa cũng không có chỗ để.
+		if station_full(id):
+			progress[id] = 0.0
+			pending_portions[id] = float(stock.get(out, 0.0))
+			continue
 		var batch := station_batch(id)
 		# Chỉ chạy khi còn nguyên liệu
 		if progress[id] <= 0.0 and not has_ingredients(id, 1):
+			pending_portions[id] = float(stock.get(out, 0.0))
 			continue
 		progress[id] = float(progress[id]) + d / station_cycle(id)
 		if float(progress[id]) >= 1.0:
 			progress[id] = 0.0
+			# Mẻ chỉ ra tới lúc kho quầy đầy, và mỗi phần trừ đúng số ghi trong công
+			# thức — số lẻ thì cộng dồn cho tới lúc đủ một đơn vị (xem _use_ingredient).
+			var room := station_keep(id) - int(stock.get(out, 0.0))
 			var made := 0
-			for i in batch:
+			for i in mini(batch, maxi(room, 0)):
 				if not has_ingredients(id, 1):
 					break
 				var recipe: Dictionary = STATIONS[id]["recipe"]
 				for ing in recipe:
-					stock[ing] = float(stock[ing]) - float(recipe[ing])
+					_use_ingredient(str(ing), float(recipe[ing]))
 				made += 1
 			if made > 0:
-				pending_portions[id] = float(pending_portions[id]) + made
+				stock[out] = float(stock.get(out, 0.0)) + float(made)
 				dirty_stock = true
 			else:
 				_log("Hết nguyên liệu cho " + str(STATIONS[id]["name"]))
+		pending_portions[id] = float(stock.get(out, 0.0))
 
-	# Bán phần ăn cho khách: mỗi giây bán được một lượng theo lượng khách tới.
-	# khách của khu nào bán cho quầy khu đó, tính một lần rồi nhớ lại
-	var per_sec: Dictionary = {}
-	for id in STATIONS:
-		if not is_station_open(id) or float(pending_portions[id]) <= 0.0:
-			continue
-		var sfid := str(STATIONS[id]["floor"])
-		if not per_sec.has(sfid):
-			per_sec[sfid] = floor_arrival_rate(sfid) / 60.0
-		var share := float(per_sec[sfid]) * price_appeal(id) * d
-		var sold := minf(float(pending_portions[id]), share)
-		if sold <= 0.0:
-			continue
-		pending_portions[id] = float(pending_portions[id]) - sold
-		var gain := sold * station_price(id)
-		pending[id] = float(pending[id]) + gain
-		served_today += int(sold)
-		stats["served"] = float(stats.get("served", 0.0)) + sold
-		stats["earned"] = float(stats.get("earned", 0.0)) + gain
-		if has_manager(id):
-			_collect_station(id)
-			dirty_money = true
-		bubble_changed.emit(id)
+	# Lò nướng thịt là cái lò giữ nhiệt: con số "phần chờ" của nó là số miếng
+	# sườn đang nằm trong khay.
+	pending_portions["grill"] = float(stock.get("grilled", 0.0))
 
 	if dirty_stock:
 		stock_changed.emit()
@@ -1244,36 +1434,69 @@ func boost_station(id: String) -> bool:
 # ---------------- Thu nhập khi vắng mặt ----------------
 
 ## Tính tiền kiếm được trong lúc người chơi không mở game.
+## Tính tiền kiếm được trong lúc người chơi không mở game. Vẫn theo đúng luật
+## lúc đang chơi: quầy nấu ra bán thành phẩm, menu ghép lại thành suất, bán được
+## suất nào thì thu trọn tiền suất đó — không có nửa suất.
 func _apply_offline(seconds: float) -> void:
 	if seconds < 60.0:
 		return
-	var span := minf(seconds, OFFLINE_MAX_SECONDS)
-	var total := 0.0
-	var portions := 0
+	# Chỉ chạy khi có người trông quầy, y như trước.
+	var watched := false
 	for id in STATIONS:
-		if not is_station_open(id) or not has_manager(id):
+		if is_station_open(str(id)) and has_manager(str(id)):
+			watched = true
+			break
+	if not watched:
+		return
+	var span := minf(seconds, OFFLINE_MAX_SECONDS)
+	# Bếp nấu được bao nhiêu phần mỗi loại trong quãng vắng mặt đó.
+	for id in STATIONS:
+		if not is_station_open(str(id)) or not has_manager(str(id)):
 			continue
-		var cycles := span / station_cycle(id) * OFFLINE_RATE
-		var made := int(cycles * station_batch(id))
-		# giới hạn theo nguyên liệu còn trong kho
+		var out := str(STATIONS[id].get("out", ""))
+		if out.is_empty():
+			continue
+		var made := int(span / station_cycle(str(id)) * OFFLINE_RATE * float(station_batch(str(id))))
 		var recipe: Dictionary = STATIONS[id]["recipe"]
 		for ing in recipe:
-			var can := int(float(stock.get(ing, 0.0)) / maxf(float(recipe[ing]), 1.0))
-			made = mini(made, can)
+			var per := float(recipe[ing])
+			if per > 0.0:
+				made = mini(made, int(float(stock.get(ing, 0.0)) / per))
 		if made <= 0:
 			continue
 		for ing in recipe:
-			stock[ing] = maxf(0.0, float(stock[ing]) - float(recipe[ing]) * made)
-		total += float(made) * station_price(id)
-		portions += made
-	if total <= 0.0:
+			_use_ingredient(str(ing), float(recipe[ing]) * float(made))
+		stock[out] = float(stock.get(out, 0.0)) + float(made)
+	# Khách ghé trong quãng đó ăn hết chừng nào thì thu chừng đó.
+	var guests := int(span * arrival_rate() / 60.0 * OFFLINE_RATE)
+	var total := 0
+	var portions := 0
+	var wheres: Array = []
+	for f in FLOORS:
+		if is_floor_unlocked(str(f["id"])):
+			wheres.append(str(f["id"]))
+	wheres.append("ship")
+	var dry := 0
+	for i in guests:
+		var did := take_order(str(wheres[i % wheres.size()]))
+		if did.is_empty():
+			# cả bếp lẫn menu đều sạch trơn thì có chờ thêm cũng vậy, nghỉ sớm
+			dry += 1
+			if dry >= wheres.size():
+				break
+			continue
+		dry = 0
+		total += dish_price(did)
+		portions += 1
+	if total <= 0:
 		return
-	money += total
+	money += float(total)
+	served_today += portions
 	_bump("served", float(portions))
-	_bump("earned", total)
+	_bump("earned", float(total))
 	money_changed.emit()
 	stock_changed.emit()
-	offline_earned.emit({"amount": total, "seconds": span, "portions": portions})
+	offline_earned.emit({"amount": float(total), "seconds": span, "portions": portions})
 
 
 # ---------------- Mua sắm ----------------
@@ -1283,9 +1506,11 @@ func can_afford(cost: float) -> bool:
 
 
 func _spend(cost: float) -> bool:
-	if money < cost:
+	# Mọi khoản chi chốt về số nguyên đồng: trong game không có tiền lẻ.
+	var due := float(round(cost))
+	if money < due:
 		return false
-	money -= cost
+	money -= due
 	money_changed.emit()
 	return true
 
@@ -1512,15 +1737,22 @@ func unlock_floor(fid: String) -> bool:
 	return true
 
 
-func set_price(id: String, value: float) -> void:
-	var floor_price := station_cost_per_portion(id) * 1.05
-	prices[id] = int(clampf(value, floor_price, float(STATIONS[id]["base_price"]) * 4.0))
+## Đặt giá bán một món trong menu. Chốt lại thành số nguyên nghìn cho khỏi có
+## đồng lẻ, và không cho bán dưới vốn.
+func set_price(did: String, value: float) -> void:
+	if not MENU.has(did):
+		return
+	var floor_price := dish_cost(did) * 1.05
+	var top := float(MENU[did]["price"]) * 4.0
+	prices[did] = int(round(clampf(value, floor_price, top) / 1000.0)) * 1000
+	if float(prices[did]) < floor_price:
+		prices[did] = int(ceil(floor_price / 1000.0)) * 1000
 	state_changed.emit()
 
 
 func suggest_all_prices() -> void:
-	for id in STATIONS:
-		prices[id] = suggested_price(id)
+	for did in MENU:
+		prices[did] = dish_suggested_price(str(did))
 	state_changed.emit()
 
 
@@ -1550,6 +1782,7 @@ func save_game() -> void:
 		"fridges": fridges, "fridge_levels": fridge_levels,
 		"grill_level": grill_level, "warmer_level": warmer_level,
 		"furniture": furniture, "placed": placed,
+		"ing_debt": ing_debt,
 		"auto_open": auto_open, "stats": stats, "claimed": claimed,
 		"last_seen": Time.get_unix_time_from_system(),
 	}
@@ -1568,7 +1801,7 @@ func load_game() -> bool:
 	var data = JSON.parse_string(text)
 	if typeof(data) != TYPE_DICTIONARY:
 		return false
-	money = float(data.get("money", money))
+	money = float(round(float(data.get("money", money))))
 	day = int(data.get("day", day))
 	day_time = float(data.get("day_time", 0.0))
 	reputation = float(data.get("reputation", reputation))
@@ -1576,15 +1809,17 @@ func load_game() -> bool:
 	var d_stock = data.get("stock", {})
 	if typeof(d_stock) == TYPE_DICTIONARY:
 		for id in INGREDIENTS:
-			stock[id] = float(d_stock.get(id, stock.get(id, 0.0)))
+			# kho luôn là số nguyên: save đời cũ có phần lẻ thì gọt đi
+			stock[id] = float(int(float(d_stock.get(id, stock.get(id, 0.0)))))
 	var d_prices = data.get("prices", {})
+	if typeof(d_prices) == TYPE_DICTIONARY:
+		for did in MENU:
+			prices[did] = int(d_prices.get(did, prices[did]))
 	var d_levels = data.get("levels", {})
 	var d_pending = data.get("pending", {})
 	var d_portions = data.get("pending_portions", {})
 	var d_mgr = data.get("managers", {})
 	for id in STATIONS:
-		if typeof(d_prices) == TYPE_DICTIONARY:
-			prices[id] = int(d_prices.get(id, prices[id]))
 		if typeof(d_levels) == TYPE_DICTIONARY:
 			levels[id] = int(d_levels.get(id, levels[id]))
 		if typeof(d_pending) == TYPE_DICTIONARY:
@@ -1672,6 +1907,14 @@ func load_game() -> bool:
 	if typeof(d_floors) == TYPE_DICTIONARY:
 		for fl in FLOORS:
 			floors_unlocked[fl["id"]] = bool(d_floors.get(fl["id"], fl["cost"] == 0))
+	# chỗ lẻ của công thức: không nhớ lại thì tải game xong là được ăn không phần lẻ
+	var d_debt = data.get("ing_debt", {})
+	if typeof(d_debt) == TYPE_DICTIONARY:
+		ing_debt.clear()
+		for id in INGREDIENTS:
+			var owed := float((d_debt as Dictionary).get(id, 0.0))
+			if owed > 0.0:
+				ing_debt[id] = clampf(owed, 0.0, 1.0)
 	var d_stats = data.get("stats", {})
 	if typeof(d_stats) == TYPE_DICTIONARY:
 		for k in stats:
