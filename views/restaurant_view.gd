@@ -1083,8 +1083,9 @@ func _show_station_card(sid: String, tab: String = "upgrade") -> void:
 	for other in GameManager.stations_on_floor(fid):
 		var oid := str(other)
 		var cost := float(GameManager.station_upgrade_cost(oid))
-		var slot := UIKit.item_slot(_station_icon(oid), UIKit.money_short(cost),
-			oid == sid, GameManager.can_afford(cost))
+		var tag := "TỐI ĐA" if GameManager.station_at_max(oid) else UIKit.money_short(cost)
+		var slot := UIKit.item_slot(_station_icon(oid), tag,
+			oid == sid, GameManager.can_afford(cost) and not GameManager.station_at_max(oid))
 		slot.pressed.connect(func(): _show_station_card(oid, tab))
 		row.add_child(slot)
 
@@ -1129,11 +1130,14 @@ func _upgrade_card(sid: String) -> Control:
 	price.alignment = BoxContainer.ALIGNMENT_CENTER
 	price.add_theme_constant_override("separation", int(UIKit.px(5)))
 	right.add_child(price)
-	var can := GameManager.can_afford(cost)
+	# kịch cấp rồi thì không còn giá, nút chuyển thành nhãn "đã tối đa"
+	var maxed := GameManager.station_at_max(sid)
+	var can := GameManager.can_afford(cost) and not maxed
 	price.add_child(UIIcon.make("cash", UIKit.px(15), UIKit.NEON_GREEN if can else UIKit.D_MUTED))
-	price.add_child(UIKit.label(UIKit.money_short(cost), 13,
+	price.add_child(UIKit.label("—" if maxed else UIKit.money_short(cost), 13,
 		UIKit.D_TEXT if can else UIKit.D_MUTED))
-	var up := UIKit.dark_button("NÂNG CẤP", UIKit.NEON_GREEN, Color("06301a"), 16)
+	var up := UIKit.dark_button("ĐÃ TỐI ĐA" if maxed else "NÂNG CẤP",
+		UIKit.NEON_GREEN, Color("06301a"), 16)
 	up.custom_minimum_size = Vector2(UIKit.px(112), UIKit.px(44))
 	up.disabled = not can
 	up.pressed.connect(func():
@@ -1153,7 +1157,10 @@ func _upgrade_card(sid: String) -> Control:
 	var pad := Control.new()
 	pad.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bonus.add_child(pad)
-	bonus.add_child(UIKit.label("Mốc sau: cấp %d" % (int(lv / 4) * 4 + 4), 12, UIKit.D_MUTED))
+	var step := maxi(GameManager.LEVEL_BATCH_EVERY, 1)
+	var next_step := int(lv / step) * step + step
+	bonus.add_child(UIKit.label("Mốc sau: cấp %d" % next_step if not maxed else "Kịch cấp",
+		12, UIKit.D_MUTED))
 
 	# Hàng cuối: thanh cấp chạy dài, nút nấu nhanh nép bên phải. Xếp thành hai
 	# hàng thì bảng cao quá, hàng ô chọn quầy bị màn hình cắt mất.
@@ -1161,7 +1168,8 @@ func _upgrade_card(sid: String) -> Control:
 	foot.add_theme_constant_override("separation", int(UIKit.px(7)))
 	v.add_child(foot)
 
-	var lvbar := UIKit.level_bar(float(lv % 4) / 4.0, "Cấp %d" % lv)
+	var lvbar := UIKit.level_bar(float(lv) / float(maxi(GameManager.MAX_LEVEL, 1)),
+		"Cấp %d/%d" % [lv, GameManager.MAX_LEVEL])
 	lvbar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	lvbar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	foot.add_child(lvbar)
@@ -1202,16 +1210,18 @@ func _path_row(icon: String, title: String, sub: String, action: String,
 	mid.add_child(UIKit.label(title, 13, UIKit.D_TITLE))
 	mid.add_child(UIKit.label(sub, 10, UIKit.D_MUTED))
 
-	var can := GameManager.can_afford(cost)
+	# cost < 0 nghĩa là kịch cấp: không còn giá để hiện, nút tắt luôn
+	var maxed := cost < 0.0
+	var can := GameManager.can_afford(cost) and not maxed
 	var right := VBoxContainer.new()
 	right.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	right.add_theme_constant_override("separation", int(UIKit.px(2)))
 	row.add_child(right)
-	var price := UIKit.label(UIKit.money_short(cost), 10,
+	var price := UIKit.label("—" if maxed else UIKit.money_short(cost), 10,
 		UIKit.D_TEXT if can else UIKit.D_MUTED)
 	price.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	right.add_child(price)
-	var btn := UIKit.dark_button(action, tint, Color("06301a"), 12)
+	var btn := UIKit.dark_button("TỐI ĐA" if maxed else action, tint, Color("06301a"), 12)
 	btn.custom_minimum_size = Vector2(UIKit.px(104), UIKit.px(32))
 	btn.disabled = not can
 	btn.pressed.connect(on_press)
@@ -1228,10 +1238,11 @@ func _grill_paths() -> Control:
 	box.add_theme_constant_override("separation", int(UIKit.px(6)))
 
 	box.add_child(_path_row("flame",
-		"LÒ NƯỚNG THAN · C%d" % GameManager.grill_level,
+		"LÒ NƯỚNG THAN · C%d/%d" % [GameManager.grill_level, GameManager.MAX_LEVEL],
 		"Ngoài hiên · %d miếng mỗi mẻ %ds" % [
 			GameManager.grill_batch(), int(GameManager.GRILL_CYCLE)],
-		"NÂNG LÒ", GameManager.grill_upgrade_cost(), UIKit.WARN,
+		"NÂNG LÒ", -1.0 if GameManager.grill_at_max() else GameManager.grill_upgrade_cost(),
+		UIKit.WARN,
 		func():
 			if GameManager.upgrade_grill():
 				_toast("Lò than lên cấp %d — mỗi mẻ %d miếng" % [
@@ -1241,9 +1252,10 @@ func _grill_paths() -> Control:
 	var have := int(GameManager.stock.get("grilled", 0.0))
 	var cap := GameManager.warmer_capacity()
 	box.add_child(_path_row("bowl",
-		"LÒ GIỮ NHIỆT · C%d" % GameManager.warmer_level,
+		"LÒ GIỮ NHIỆT · C%d/%d" % [GameManager.warmer_level, GameManager.MAX_LEVEL],
 		"Trong quầy · đang giữ %d/%d miếng" % [have, cap],
-		"NỚI LÒ", GameManager.warmer_upgrade_cost(), UIKit.NEON_GREEN,
+		"NỚI LÒ", -1.0 if GameManager.warmer_at_max() else GameManager.warmer_upgrade_cost(),
+		UIKit.NEON_GREEN,
 		func():
 			if GameManager.upgrade_warmer():
 				_toast("Lò giữ nhiệt lên cấp %d — chứa được %d miếng" % [
@@ -1329,7 +1341,7 @@ func _show_grill_card() -> void:
 	grid.columns = 2
 	grid.add_theme_constant_override("h_separation", 12)
 	v.add_child(grid)
-	_kv(grid, "Cấp lò", "C%d" % GameManager.grill_level)
+	_kv(grid, "Cấp lò", "C%d/%d" % [GameManager.grill_level, GameManager.MAX_LEVEL])
 	_kv(grid, "Mỗi mẻ", "%d miếng" % GameManager.grill_batch())
 	_kv(grid, "Một mẻ mất", "%d giây" % int(GameManager.GRILL_CYCLE))
 	_kv(grid, "Sườn sống", "%d miếng" % int(GameManager.stock.get("pork", 0.0)))
@@ -1352,10 +1364,12 @@ func _show_grill_card() -> void:
 		v.add_child(UIKit.tag(why, UIKit.BAD, Color(0.71, 0.33, 0.25, 0.12)))
 
 	var cost := GameManager.grill_upgrade_cost()
-	var up := UIKit.button_primary("NÂNG LÒ · +%d miếng/mẻ · %s ₫" % [
-		GameManager.GRILL_BATCH_STEP, UIKit.money(cost)], 13)
+	var grill_maxed := GameManager.grill_at_max()
+	var up := UIKit.button_primary("LÒ ĐÃ KỊCH CẤP %d" % GameManager.MAX_LEVEL if grill_maxed
+		else "NÂNG LÒ · +%d miếng/mẻ · %s ₫" % [
+			GameManager.GRILL_BATCH_STEP, UIKit.money(cost)], 13)
 	up.custom_minimum_size = Vector2(0, 76)
-	up.disabled = not GameManager.can_afford(cost)
+	up.disabled = grill_maxed or not GameManager.can_afford(cost)
 	up.pressed.connect(func():
 		if GameManager.upgrade_grill():
 			_toast("Lò than lên cấp %d — mỗi mẻ %d miếng" % [

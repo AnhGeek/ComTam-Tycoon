@@ -31,6 +31,13 @@ giá nguyên liệu, giá mở khu, lò than, lò giữ nhiệt, lương nhân v
 trí/bàn ghế, thưởng nhiệm vụ, và mấy hệ số chung (tiền vốn, độ dài một ngày, độ
 kiên nhẫn của khách, hệ số nâng cấp mỗi cấp).
 
+**Giá từng cấp:** mỗi thứ nâng cấp được (mọi quầy, lò than, lò giữ nhiệt) có mảng
+`up_costs` đúng `chung.max_level` số (mặc định 25). Số thứ k là giá để **đạt cấp
+k**, nên số đầu là 0 (cấp 1 có sẵn) và số cuối là giá lên cấp tối đa. Kịch cấp thì
+nút trong game đổi thành "ĐÃ TỐI ĐA". `up_cost` và `chung.station_up_mult` chỉ còn
+là đường lui khi mảng thiếu số. Giá mở khu (`floors.<id>.cost`) là khoản trả một
+lần, không dính gì tới cấp.
+
 `GameManager._load_balance()` đọc file này lúc khởi động rồi **ghi đè** lên số mặc
 định khai báo trong `scripts/game_manager.gd`. Thiếu khoá nào thì khoá đó giữ số
 mặc định, nên file JSON chỉ cần ghi phần muốn sửa. File hỏng cú pháp thì bỏ qua cả

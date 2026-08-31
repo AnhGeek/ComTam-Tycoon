@@ -122,6 +122,14 @@ static var WARMER_UP_MULT := 1.75
 ## Tiền vốn lúc mở quán mới.
 static var START_MONEY := 3000000.0
 
+## Cấp tối đa của mọi thứ nâng cấp được (quầy, lò than, lò giữ nhiệt). Giá từng
+## cấp nằm trong data/balance.json: mảng `up_costs` có đúng MAX_LEVEL số, số thứ k
+## là giá để ĐẠT cấp k — nên số đầu tiên là 0 vì cấp 1 có sẵn lúc mở quầy.
+## (Giá mở khu mới nằm riêng ở mục `floors`, không dính gì tới cấp.)
+static var MAX_LEVEL := 25
+static var GRILL_UP_COSTS: Array = []
+static var WARMER_UP_COSTS: Array = []
+
 ## Nhân viên chung của quán.
 static var STAFF := {
     "cook": {"name": "Phụ bếp", "desc": "-12% thời gian mỗi mẻ (cộng dồn)", "cost": 400000, "salary": 30000, "max": 5},
@@ -242,9 +250,9 @@ func _load_balance() -> void:
     _merge_rows(d.get("stations", {}), STATIONS,
         {"name": TYPE_STRING, "dish": TYPE_STRING, "base_price": TYPE_FLOAT,
         "cycle": TYPE_FLOAT, "batch": TYPE_INT, "up_cost": TYPE_FLOAT,
-        "recipe": TYPE_DICTIONARY})
+        "recipe": TYPE_DICTIONARY, "up_costs": TYPE_ARRAY})
     _merge_rows(d.get("ingredients", {}), INGREDIENTS,
-        {"name": TYPE_STRING, "price": TYPE_FLOAT, "pack": TYPE_INT})
+        {"name": TYPE_STRING, "unit": TYPE_STRING, "price": TYPE_FLOAT, "pack": TYPE_INT})
     _merge_rows(d.get("staff", {}), STAFF,
         {"cost": TYPE_FLOAT, "salary": TYPE_FLOAT, "max": TYPE_INT})
     _merge_rows(d.get("decor", {}), DECOR,
@@ -280,6 +288,8 @@ func _load_balance() -> void:
         GRILL_COAL = float(gd.get("coal_per_batch", GRILL_COAL))
         GRILL_UP_COST = float(gd.get("up_cost", GRILL_UP_COST))
         GRILL_UP_MULT = float(gd.get("up_mult", GRILL_UP_MULT))
+        if typeof(gd.get("up_costs")) == TYPE_ARRAY:
+            GRILL_UP_COSTS = (gd["up_costs"] as Array).duplicate()
 
     var w = d.get("warmer", {})
     if typeof(w) == TYPE_DICTIONARY:
@@ -288,11 +298,14 @@ func _load_balance() -> void:
         WARMER_STEP = int(wd.get("step", WARMER_STEP))
         WARMER_UP_COST = float(wd.get("up_cost", WARMER_UP_COST))
         WARMER_UP_MULT = float(wd.get("up_mult", WARMER_UP_MULT))
+        if typeof(wd.get("up_costs")) == TYPE_ARRAY:
+            WARMER_UP_COSTS = (wd["up_costs"] as Array).duplicate()
 
     var m = d.get("chung", d.get("misc", {}))
     if typeof(m) == TYPE_DICTIONARY:
         var md: Dictionary = m
         START_MONEY = float(md.get("start_money", START_MONEY))
+        MAX_LEVEL = maxi(1, int(md.get("max_level", MAX_LEVEL)))
         DAY_DURATION = float(md.get("day_duration", DAY_DURATION))
         CUSTOMER_PATIENCE = float(md.get("customer_patience", CUSTOMER_PATIENCE))
         MANAGER_COST_MULT = float(md.get("manager_cost_mult", MANAGER_COST_MULT))
@@ -324,6 +337,9 @@ func _merge_rows(src, dst: Dictionary, fields: Dictionary) -> void:
                 TYPE_DICTIONARY:
                     if typeof(row[key]) == TYPE_DICTIONARY:
                         dst[id][key] = (row[key] as Dictionary).duplicate()
+                TYPE_ARRAY:
+                    if typeof(row[key]) == TYPE_ARRAY:
+                        dst[id][key] = (row[key] as Array).duplicate()
                 _:
                     dst[id][key] = str(row[key])
 
@@ -417,9 +433,31 @@ func is_station_open(id: String) -> bool:
     return station_level(id) > 0 and is_floor_unlocked(str(STATIONS[id]["floor"]))
 
 
+## Giá để nâng quầy lên cấp kế tiếp. Ưu tiên tra bảng `up_costs` trong
+## balance.json; bảng thiếu số thì mới tính theo công thức nhân dần.
 func station_upgrade_cost(id: String) -> int:
     var lv := station_level(id)
+    if lv >= MAX_LEVEL:
+        return 0
+    var listed := _cost_at(STATIONS[id].get("up_costs"), lv)
+    if listed >= 0.0:
+        return int(round(listed))
     return int(round(float(STATIONS[id]["up_cost"]) * pow(STATION_UP_MULT, maxi(lv, 0))))
+
+
+## Quầy đã kịch cấp chưa.
+func station_at_max(id: String) -> bool:
+    return station_level(id) >= MAX_LEVEL
+
+
+## Đọc giá cấp `lv` trong một bảng giá. Trả -1 nếu bảng không có số đó.
+func _cost_at(table, lv: int) -> float:
+    if typeof(table) != TYPE_ARRAY:
+        return -1.0
+    var rows: Array = table
+    if lv < 0 or lv >= rows.size():
+        return -1.0
+    return float(rows[lv])
 
 
 func manager_cost(id: String) -> int:
@@ -450,7 +488,16 @@ func grill_batch() -> int:
 
 
 func grill_upgrade_cost() -> float:
+    if grill_at_max():
+        return 0.0
+    var listed := _cost_at(GRILL_UP_COSTS, grill_level)
+    if listed >= 0.0:
+        return listed
     return GRILL_UP_COST * pow(GRILL_UP_MULT, float(grill_level - 1))
+
+
+func grill_at_max() -> bool:
+    return grill_level >= MAX_LEVEL
 
 
 ## Còn than là lò còn đỏ lửa, dù chưa có miếng sườn nào trên vỉ. Hết sườn chỉ là
@@ -473,7 +520,16 @@ func warmer_capacity() -> int:
 
 
 func warmer_upgrade_cost() -> float:
+    if warmer_at_max():
+        return 0.0
+    var listed := _cost_at(WARMER_UP_COSTS, warmer_level)
+    if listed >= 0.0:
+        return listed
     return WARMER_UP_COST * pow(WARMER_UP_MULT, float(warmer_level - 1))
+
+
+func warmer_at_max() -> bool:
+    return warmer_level >= MAX_LEVEL
 
 
 ## Lò đang đầy tới đâu, 0..1 — dùng cho thanh mức và cho số miếng bày trong lò.
@@ -486,6 +542,8 @@ func warmer_full() -> bool:
 
 
 func upgrade_warmer() -> bool:
+    if warmer_at_max():
+        return false
     var cost := warmer_upgrade_cost()
     if not _spend(cost):
         return false
@@ -497,6 +555,8 @@ func upgrade_warmer() -> bool:
 
 
 func upgrade_grill() -> bool:
+    if grill_at_max():
+        return false
     var cost := grill_upgrade_cost()
     if not _spend(cost):
         return false
@@ -1093,7 +1153,7 @@ func sell_furniture(index: int) -> float:
 
 
 func upgrade_station(id: String) -> bool:
-    if not is_floor_unlocked(str(STATIONS[id]["floor"])):
+    if not is_floor_unlocked(str(STATIONS[id]["floor"])) or station_at_max(id):
         return false
     if not _spend(station_upgrade_cost(id)):
         return false
