@@ -25,6 +25,8 @@ const WING_DX := ROOM_W + WING_GAP
 # Lò than vỉa hè: đặt nép mé trong, chừa nguyên khoảng vỉa hè cho khách kê bàn.
 const GRILL_POS := Vector3(-3.25, 0.0, ROOM_D * 0.5 + 0.95)
 const GRILL_MEATS := 6             # số miếng thịt bày trên vỉ cho vui mắt
+const WARM_SLOTS := 18             # số ô sườn bày được trong lò giữ nhiệt
+const CHOP_STAND := 0.35           # bục gỗ kê chân người thái bì & chả
 
 const SERVICE_SEGMENTS := 12       # số vạch trên vòng "đang ra món"
 const MAX_CUSTOMERS := 12          # trần số khách mỗi khu, giữ cho điện thoại yếu chạy mượt
@@ -91,6 +93,16 @@ const C_EMBER := Color8(0xff, 0x4d, 0x1a)          # than đang đỏ
 const C_ASH := Color8(0x4a, 0x44, 0x4d)            # than chưa bén lửa
 const C_MEAT := Color8(0xb5, 0x5f, 0x38)           # sườn sống
 const C_MEAT_DONE := Color8(0x7a, 0x3a, 0x1e)      # sườn đã cháy cạnh
+const C_BI := Color8(0xe8, 0xd8, 0xbe)             # bì heo thái sợi
+const C_CHA := Color8(0xd9, 0xa5, 0x4e)            # chả trứng hấp
+const C_CHA_TOP := Color8(0xe8, 0xc0, 0x54)        # mặt chả quét lòng đỏ
+# Nồi cơm gas công nghiệp: thân sơn xám nhám, nắp và vành inox, đế đen.
+const C_COOKER_BODY := Color8(0xa8, 0xaf, 0xb9)
+const C_COOKER_SHADE := Color8(0x7e, 0x86, 0x94)
+const C_COOKER_STEEL := Color8(0xf1, 0xf4, 0xf9)
+const C_COOKER_BASE := Color8(0x5d, 0x64, 0x71)
+const C_COOKER_KNOB := Color8(0x33, 0x38, 0x42)
+const C_COOKER_SWITCH := Color8(0xd8, 0x3a, 0x33)
 const C_OK := Color8(0x22, 0xc3, 0x8e)
 const C_NO := Color8(0xff, 0x5c, 0x5c)
 
@@ -547,10 +559,15 @@ func _build_grill_stall(t: Node3D, accent: Color) -> void:
 
 
 ## Nhịp sống của lò: than phập phồng, lửa nhấp nháy, khói bay lên và thịt đổi màu
-## dần theo tiến độ mẻ nướng. Lò tắt thì than xám lại, hết khói.
+## dần theo tiến độ mẻ nướng.
+##
+## Hai chuyện khác nhau: CÒN THAN thì than vẫn đỏ, lửa vẫn liếm, khói vẫn bay —
+## hết sườn sống chỉ làm cái vỉ trống trơn chứ không dập được bếp. Hết than mới
+## là lò tắt: than xám lại, tắt lửa, tắt khói.
 func _update_grill(dt: float) -> void:
     if _grill.is_empty() or not is_instance_valid(_grill["node"] as Node3D):
         return
+    var lit := GameManager.grill_lit()
     var on := GameManager.grill_running()
     var prog := clampf(GameManager.grill_progress, 0.0, 1.0)
     var beat := 0.5 + 0.5 * sin(_time * 3.1)
@@ -559,13 +576,13 @@ func _update_grill(dt: float) -> void:
         var m := (e as MeshInstance3D).material_override as StandardMaterial3D
         if m == null:
             continue
-        m.emission_energy_multiplier = (1.1 + beat * 1.3) if on else 0.0
-        m.albedo_color = C_EMBER if on else C_ASH
+        m.emission_energy_multiplier = (1.1 + beat * 1.3) if lit else 0.0
+        m.albedo_color = C_EMBER if lit else C_ASH
 
     for f in _grill["flames"]:
         var fl: MeshInstance3D = f["node"]
-        fl.visible = on
-        if not on:
+        fl.visible = lit
+        if not lit:
             continue
         var wob := 0.45 + 0.75 * absf(sin(_time * float(f["speed"]) + float(f["phase"])))
         var sc: float = float(f["scale"])
@@ -576,13 +593,13 @@ func _update_grill(dt: float) -> void:
     var glow = _grill.get("glow")
     if glow != null and is_instance_valid(glow):
         var lamp: OmniLight3D = glow
-        lamp.visible = on
+        lamp.visible = lit
         lamp.light_energy = 1.1 + beat * 1.1
 
     for smk in _grill["smoke"]:
         var n: Node3D = smk["node"]
-        n.visible = on
-        if not on:
+        n.visible = lit
+        if not lit:
             continue
         n.position.y += dt * float(smk["speed"])
         var rise: float = n.position.y - float(smk["y0"])
@@ -596,8 +613,9 @@ func _update_grill(dt: float) -> void:
             n.position.y = float(smk["y0"])
             n.scale = Vector3.ONE
 
-    # người đứng lò bưng mẻ đi giao thì vỉ trống trơn, về tới nơi mới xếp thịt lại
-    var away := bool(_grill.get("away", false))
+    # vỉ chỉ có thịt khi đang nướng thật: bưng mẻ đi giao hay hết sườn sống thì
+    # vỉ trống trơn, dù than bên dưới vẫn đang đỏ rực
+    var away := bool(_grill.get("away", false)) or not on
     for mt in _grill["meats"]:
         (mt["pivot"] as Node3D).visible = not away
 
@@ -971,6 +989,144 @@ func _build_decor(node: Node3D, index: int, accent: Color) -> void:
 
 # ---------- Quầy hàng ----------
 
+## Nồi cơm gas cỡ lớn kiểu quán ăn: đế đen có bảng công tắc đỏ và van gas, thân
+## drum sơn xám hơi loe lên, vành inox, nắp inox nhiều tầng với quai chữ nhật, hai
+## móc gài hai bên. Trả về mảng hơi nước để `_update_stations` cho nó bốc lên.
+func _build_rice_cooker(holder: Node3D, open: bool, trim: Color) -> Array:
+    # khoá thì cả cái nồi xám xịt như mọi thứ chưa mở
+    var body: Color = C_COOKER_BODY if open else C_LOCK
+    var shade: Color = C_COOKER_SHADE if open else C_LOCK
+    var steel: Color = C_COOKER_STEEL if open else C_LOCK
+    var base: Color = C_COOKER_BASE if open else C_LOCK
+    var dark: Color = C_COOKER_KNOB if open else C_LOCK
+
+    # ---- đế bếp gas: khối đen bè ra, nồi ngồi lên trên
+    _cylinder(holder, 0.30, 0.32, 0.08, base, 0, 1.04, 0, 16)
+    _cylinder(holder, 0.33, 0.33, 0.025, shade, 0, 1.088, 0, 16)
+    # bảng điều khiển hai công tắc đỏ, quay ra phía khách
+    _box(holder, 0.18, 0.075, 0.05, dark, 0, 1.045, 0.29)
+    for sx in [-0.04, 0.04]:
+        _box(holder, 0.055, 0.048, 0.02, C_COOKER_SWITCH if open else C_LOCK, sx, 1.045, 0.317, 0.45)
+    # van gas chìa sang bên phải: tay vặn rồi tới ống dẫn
+    var knob := _cylinder(holder, 0.048, 0.048, 0.05, trim, 0.315, 1.04, 0.1, 10)
+    knob.rotation.z = PI * 0.5
+    var pipe := _cylinder(holder, 0.024, 0.024, 0.17, dark, 0.42, 1.04, 0.1, 8)
+    pipe.rotation.z = PI * 0.5
+
+    # ---- thân nồi: gần như thẳng đứng, chỉ hơi phình lên trên như nồi thật
+    _cylinder(holder, 0.34, 0.30, 0.07, body, 0, 1.13, 0, 18)
+    _cylinder(holder, 0.35, 0.34, 0.30, body, 0, 1.315, 0, 18)
+    _cylinder(holder, 0.355, 0.352, 0.028, shade, 0, 1.452, 0, 18)
+
+    # ---- vành inox loe ra khỏi thân, rồi nắp phẳng xếp tầng (không phải mái vòm)
+    _cylinder(holder, 0.39, 0.383, 0.03, steel, 0, 1.481, 0, 20)
+    _cylinder(holder, 0.355, 0.355, 0.038, steel, 0, 1.515, 0, 20)
+    _cylinder(holder, 0.295, 0.295, 0.03, steel, 0, 1.549, 0, 20)
+    _cylinder(holder, 0.19, 0.19, 0.022, steel, 0, 1.575, 0, 16)
+
+    # quai nắp: khung chữ nhật rỗng ruột nằm ngửa trên nắp, kê trên hai chân
+    for hx in [-0.115, 0.115]:
+        _box(holder, 0.04, 0.045, 0.05, dark, hx, 1.605, 0)
+        _box(holder, 0.038, 0.032, 0.15, dark, hx, 1.638, 0)
+    for hz in [-0.056, 0.056]:
+        _box(holder, 0.27, 0.032, 0.038, dark, 0, 1.638, hz)
+
+    # ---- hai móc gài kẹp nắp xuống thân, bấu vào vành inox
+    for lx in [-1.0, 1.0]:
+        _box(holder, 0.045, 0.17, 0.055, shade, lx * 0.378, 1.42, 0)
+        _box(holder, 0.09, 0.03, 0.06, shade, lx * 0.372, 1.502, 0)
+        _box(holder, 0.055, 0.05, 0.07, dark, lx * 0.362, 1.335, 0, 0.5)
+
+    # ---- hơi cơm phì ra quanh mép nắp lúc nồi đang chạy
+    var steam: Array = []
+    if not open:
+        return steam
+    for i in 3:
+        var sm := StandardMaterial3D.new()
+        sm.albedo_color = Color(0.95, 0.97, 1.0, 0.32)
+        sm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+        sm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+        var sp := _cylinder(holder, 0.06, 0.06, 0.06, Color.WHITE,
+            randf_range(-0.2, 0.2), 1.68 + float(i) * 0.28, randf_range(-0.14, 0.14), 8)
+        sp.material_override = sm
+        steam.append({"node": sp, "y0": 1.68})
+    return steam
+
+
+## Lò giữ nhiệt đặt trên quầy: sườn nướng ngoài hiên bưng vào đây nằm chờ khách.
+##
+## Máy quay của game nhìn chúi xuống 42 độ, nên tủ kính đứng thì chỉ thấy cái nóc.
+## Vì vậy lò làm kiểu KHAY HỞ NÓC: khay inox nông, sườn nằm phơi ra trong khay,
+## phía sau là vách và mái che có đèn sưởi hắt xuống. Nhìn từ trên xuống là đếm
+## được đúng số miếng đang có — mỗi miếng thấy được là một miếng có thật trong kho.
+## Trả về mảng các miếng để `_update_stations` bật/tắt theo số sườn còn lại.
+func _build_warmer(holder: Node3D, open: bool, body_col: Color, trim: Color) -> Array:
+    # khay inox nông đặt trên mặt quầy
+    _box(holder, 1.02, 0.14, 0.64, C_STEEL_LIGHT, 0, 1.07, 0, 0.4)
+    _box(holder, 0.94, 0.1, 0.56, body_col if open else C_LOCK, 0, 1.1, 0, 0.5)
+    _box(holder, 1.06, 0.04, 0.68, trim, 0, 1.0, 0, 0.5)
+
+    # vách sau + hai vách hông + mái che: phần "lò" chụp lên nửa sau của khay
+    _box(holder, 1.02, 0.36, 0.06, body_col, 0, 1.32, -0.29)
+    for dx in [-0.48, 0.48]:
+        _box(holder, 0.06, 0.36, 0.34, body_col, dx, 1.32, -0.15)
+    _box(holder, 1.06, 0.06, 0.42, body_col, 0, 1.5, -0.13)
+    _box(holder, 1.08, 0.04, 0.44, trim, 0, 1.535, -0.13, 0.5)
+
+    var slots: Array = []
+    if not open:
+        return slots
+
+    # đèn sưởi vàng cam gắn dưới mái, hắt xuống khay sườn
+    var lamp := _box(holder, 0.86, 0.03, 0.26, C_HOT, 0, 1.455, -0.13, 0.3)
+    var lm := StandardMaterial3D.new()
+    lm.albedo_color = C_HOT
+    lm.emission_enabled = true
+    lm.emission = C_HOT
+    lm.emission_energy_multiplier = 1.4
+    lamp.material_override = lm
+
+    # sườn xếp hai hàng trong khay, hàng sau nằm dưới mái cho ấm
+    var per_row := int(WARM_SLOTS / 2)
+    for row in 2:
+        var rz := -0.14 + float(row) * 0.26
+        for i in per_row:
+            var x := -0.4 + float(i) * (0.8 / float(per_row - 1))
+            var slab := _box(holder, 0.08, 0.035, 0.22, C_MEAT_DONE, x, 1.155, rz, 0.55)
+            slab.rotation.y = 0.05 * (1.0 if i % 2 == 0 else -1.0)
+            slab.visible = false
+            slots.append(slab)
+    return slots
+
+
+## Chỗ thái bì & chả: cái thớt nằm ngay trên mặt quầy bếp, cùng một dãy với nồi
+## cơm tấm và lò giữ nhiệt — người thái đứng sau quầy thái xuống đó. Trên thớt có
+## mớ bì heo thái sợi và miếng chả trứng; hết thứ nào thì phần đó biến khỏi thớt,
+## nhìn cái thớt là biết bàn còn làm được hay không.
+func _build_chop_board(holder: Node3D) -> Dictionary:
+    var z := -0.25
+    # thớt gỗ dày đặt trên mặt quầy (mặt quầy cao 1.07)
+    _box(holder, 0.5, 0.05, 0.3, C_WOOD, 0, 1.095, z, 0.8)
+    _box(holder, 0.52, 0.025, 0.32, C_WOOD_DARK, 0, 1.072, z, 0.85)
+
+    # bì heo: mấy sợi mảnh xếp chồng bên trái thớt
+    var bi := Node3D.new()
+    holder.add_child(bi)
+    for i in 7:
+        var b := _box(bi, 0.085, 0.012, 0.012, C_BI, -0.13 + randf_range(-0.02, 0.02),
+            1.126 + float(i) * 0.008, z - 0.06 + float(i) * 0.014, 0.85)
+        b.rotation.y = randf_range(-0.5, 0.5)
+
+    # chả trứng: một miếng vuông vàng nâu và mấy lát đã xắn ra
+    var cha := Node3D.new()
+    holder.add_child(cha)
+    _box(cha, 0.1, 0.045, 0.1, C_CHA, 0.14, 1.142, z - 0.05, 0.7)
+    _box(cha, 0.1, 0.008, 0.1, C_CHA_TOP, 0.14, 1.168, z - 0.05, 0.7)
+    for i in 3:
+        _box(cha, 0.026, 0.04, 0.085, C_CHA, 0.075 + float(i) * 0.03, 1.14, z + 0.07, 0.7)
+    return {"bi": bi, "cha": cha}
+
+
 func _build_station(parent: Node3D, sid: String, pos: Vector3, floor_index: int) -> void:
     var open := GameManager.is_station_open(sid)
     var accent: Color = FLOOR_ACCENTS[floor_index % FLOOR_ACCENTS.size()]
@@ -983,9 +1139,15 @@ func _build_station(parent: Node3D, sid: String, pos: Vector3, floor_index: int)
     var body_col := C_STEEL_DARK if open else C_LOCK
     var trim := accent if open else C_LOCK
     var smoke: Array = []
+    var warm: Array = []
+    var chop: Dictionary = {}
 
     match sid:
-        "grill", "bbq":
+        "grill":
+            # quầy trong quán KHÔNG nướng: nó là lò giữ nhiệt, giữ ấm sườn đã nướng
+            warm = _build_warmer(holder, open, body_col, trim)
+        "bbq":
+            # lò than hoa trên sân vườn thì nướng thật, sườn sống bỏ thẳng lên vỉ
             _box(holder, 0.98, 0.3, 0.72, body_col, 0, 1.16, 0)
             _box(holder, 1.02, 0.08, 0.76, trim, 0, 1.0, 0, 0.5)
             if open:
@@ -1002,13 +1164,21 @@ func _build_station(parent: Node3D, sid: String, pos: Vector3, floor_index: int)
                     sm.albedo_color = Color(0.9, 0.92, 0.95, 0.42)
                     sm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
                     sm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-                    var sp := _cylinder(holder, 0.12, 0.12, 0.12, Color.WHITE, randf_range(-0.35, 0.35), 1.6 + randf() * 1.0, 0, 8)
+                    var sp := _cylinder(holder, 0.12, 0.12, 0.12, Color.WHITE,
+                        randf_range(-0.35, 0.35), 1.6 + randf() * 1.0, 0, 8)
                     sp.material_override = sm
                     smoke.append({"node": sp, "y0": sp.position.y})
         "rice", "dessert":
-            _cylinder(holder, 0.33, 0.36, 0.58, Color8(0xf3, 0xf5, 0xfa), 0, 1.29, 0, 14)
-            _cylinder(holder, 0.35, 0.35, 0.09, trim, 0, 1.61, 0, 14)
-        "prep", "combo", "vip":
+            smoke = _build_rice_cooker(holder, open, trim)
+        "prep":
+            # Bàn bì & chả KHÔNG còn là cái bục trên mặt quầy nữa: bản thân cái bàn
+            # thái kê phía trước chính là quầy này. Mặt quầy chỗ đó để trống, chỉ
+            # còn chồng đĩa chờ ra món.
+            _cylinder(holder, 0.14, 0.14, 0.05, C_PLATE, -0.24, 1.1, -0.1, 12)
+            _cylinder(holder, 0.14, 0.14, 0.04, C_PLATE, -0.24, 1.14, -0.1, 12)
+            if open:
+                chop = _build_chop_board(holder)
+        "combo", "vip":
             _box(holder, 0.88, 0.2, 0.64, trim, 0, 1.1, 0, 0.55)
             _cylinder(holder, 0.14, 0.14, 0.05, C_PLATE, -0.2, 1.22, 0, 12)
             _cylinder(holder, 0.14, 0.14, 0.05, C_PLATE, 0.13, 1.22, 0, 12)
@@ -1025,7 +1195,8 @@ func _build_station(parent: Node3D, sid: String, pos: Vector3, floor_index: int)
     _touch_area(holder, "boost", sid, Vector3(0, 1.05, 0), Vector3(1.2, 1.9, 1.15))
 
     _station_nodes[sid] = {
-        "holder": holder, "smoke": smoke, "floor": floor_index, "punch": 0.0,
+        "holder": holder, "smoke": smoke, "warm": warm, "chop": chop,
+        "floor": floor_index, "punch": 0.0,
     }
 
 
@@ -1191,11 +1362,27 @@ func _populate(node: Node3D, fid: String, index: int) -> void:
             continue
         var sp := _station_slot(i)
         var ch := ComTamChars.build(cook_keys[i % cook_keys.size()])
-        ch.position = Vector3(sp.x, 0, sp.z - 0.9)
+        # Khoảng hẹp sau quầy bị chính cái quầy che kín ở góc máy 42 độ, đứng đó
+        # thì không ai thấy. Riêng người thái bì & chả cho ra đứng phía mặt tiền
+        # quầy, quay mặt vào trong — đúng kiểu quán cơm tấm bày thớt ra trước cho
+        # khách nhìn, mà cũng là chỗ duy nhất thấy được tay dao.
+        # Người thái bì & chả đứng SÁT LƯNG QUẦY, quay mặt ra phía khách, và đứng
+        # trên một cái bục gỗ: người trong game chỉ cao 1,31 mà mặt quầy đã 1,07,
+        # không kê lên thì cái quầy che kín tới tận cổ mà tay cũng không với tới
+        # thớt. Bục nằm khuất sau quầy nên người chơi chỉ thấy cô ấy cao vừa phải.
+        var chopper := str(open_stations[i]) == "prep"
+        var stand_y := CHOP_STAND if chopper else 0.0
+        ch.position = Vector3(sp.x, stand_y, sp.z - 0.6 if chopper else sp.z - 0.9)
         ch.rotation.y = 0.0
+        if chopper:
+            _box(node, 0.7, CHOP_STAND, 0.5, C_WOOD_DARK, sp.x, CHOP_STAND * 0.5, sp.z - 0.6)
         node.add_child(ch)
-        _actors.append({"node": ch, "rig": ComTamChars.rig_of(ch), "mode": "cook",
-            "floor": index, "phase": randf() * 3.0})
+        var crig := ComTamChars.rig_of(ch)
+        var sid_here := str(open_stations[i])
+        # người đứng bàn bì & chả cầm sẵn con dao bầu để thái
+        var knife = ComTamChars.attach_knife(crig) if sid_here == "prep" else null
+        _actors.append({"node": ch, "rig": crig, "mode": "cook", "station": sid_here,
+            "knife": knife, "floor": index, "phase": randf() * 3.0})
 
     # người phục vụ: lấy đĩa ở quầy -> bưng ra bàn -> quay lại quầy
     var linh := ComTamChars.build("linh")
@@ -1285,6 +1472,29 @@ func _update_stations() -> void:
         elif holder.scale.x != 1.0:
             holder.scale = Vector3.ONE
 
+        # bàn bì & chả: hết thứ nào thì thứ đó biến khỏi thớt
+        var chop: Dictionary = st.get("chop", {})
+        if not chop.is_empty():
+            (chop["bi"] as Node3D).visible = float(GameManager.stock.get("bi", 0.0)) >= 1.0
+            (chop["cha"] as Node3D).visible = float(GameManager.stock.get("cha", 0.0)) >= 1.0
+
+        # lò giữ nhiệt: số miếng sườn bày trong lò đúng bằng số miếng đang có,
+        # lò rộng hơn sức bày thì mỗi miếng đại diện cho vài miếng trong kho
+        var warm: Array = st.get("warm", [])
+        if not warm.is_empty():
+            var cap := GameManager.warmer_capacity()
+            var shown := mini(cap, WARM_SLOTS)
+            var have := int(GameManager.stock.get("grilled", 0.0))
+            var lit := 0
+            if cap > 0:
+                lit = int(ceil(float(have) * float(shown) / float(cap)))
+            lit = clampi(lit, 0, warm.size())
+            for i in warm.size():
+                var slab: MeshInstance3D = warm[i]
+                var want := i < lit
+                if slab.visible != want:
+                    slab.visible = want
+
         for smk in st["smoke"]:
             var n: Node3D = smk["node"]
             n.position.y += dt * 0.4
@@ -1321,7 +1531,7 @@ func _update_actors(delta: float) -> void:
         var t: float = _time + float(a["phase"])
         match str(a["mode"]):
             "cook":
-                ComTamChars.cook(rig, t)
+                _update_cook(a, rig, t)
             "server":
                 _update_server(a, node, rig, t, delta)
             "dog":
@@ -1330,6 +1540,24 @@ func _update_actors(delta: float) -> void:
                 _update_customer(a, node, rig, t, delta)
             "griller":
                 _update_griller(a, node, rig, t, delta)
+
+
+## Người đứng bếp. Riêng bàn bì & chả thì đứng THÁI: dao nhấc lên bổ xuống đều
+## đều — nhưng chỉ khi còn đủ cả bì heo lẫn chả trứng để mà thái. Hết một trong
+## hai thì bỏ dao xuống, đứng thở, và cái thớt cũng trống đúng phần đã hết.
+func _update_cook(a: Dictionary, rig: Dictionary, t: float) -> void:
+    var sid := str(a.get("station", ""))
+    var knife = a.get("knife")
+    if sid != "prep":
+        ComTamChars.cook(rig, t)
+        return
+    var busy := GameManager.is_station_open("prep") and GameManager.has_ingredients("prep", 1)
+    if busy:
+        ComTamChars.chop(rig, t)
+    else:
+        ComTamChars.idle(rig, t)
+    if knife != null and is_instance_valid(knife as Node):
+        (knife as Node3D).visible = busy
 
 
 ## Người phục vụ bưng khay: nhận đĩa ở quầy, đĩa nằm trên khay suốt đường đi,

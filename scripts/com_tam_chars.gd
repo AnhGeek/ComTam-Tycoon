@@ -437,6 +437,45 @@ static func cook(rig: Dictionary, t: float) -> void:
 	rig["root"].rotation.z = 0.0
 
 
+## Đứng thái: tay trái đè miếng bì trên thớt, tay phải nhấc dao lên rồi bổ xuống
+## đều đều. Bàn tay dao chạy trong khoảng 0,77–0,96 tính từ chân người, nên muốn
+## thái đúng trên mặt quầy (cao 1,07) thì phải kê người lên — xem chỗ dựng người
+## thái trong `tycoon_world.gd`.
+static func chop(rig: Dictionary, t: float) -> void:
+	_legs_rest(rig)
+	var arms: Array = rig["arms"]
+	# mỗi nhát dao chừng nửa giây: nhấc cao dứt khoát rồi bổ xuống
+	var k := fmod(t * 2.2, 1.0)
+	var lift: float = sin(k * PI)
+	lift = lift * lift
+	# tay trái đè miếng bì, nhích nhẹ theo nhịp như đẩy miếng vào dao
+	arms[0]["shoulder"].rotation.x = -0.72 + lift * 0.05
+	arms[0]["shoulder"].rotation.z = -0.2
+	arms[0]["elbow"].rotation.x = -1.15
+	# tay phải cầm dao: bổ xuống thớt rồi nhấc bổng lên cao
+	arms[1]["shoulder"].rotation.x = -0.36 - lift * 1.25
+	arms[1]["shoulder"].rotation.z = 0.24
+	arms[1]["elbow"].rotation.x = -1.55 + lift * 0.8
+	rig["torso"].rotation.x = 0.2
+	rig["torso"].rotation.y = 0.0
+	rig["head"].rotation.x = 0.3
+	rig["root"].position.y = 0.0
+	rig["root"].rotation.z = 0.0
+
+
+## Con dao bầu cầm ở tay phải, mặc định ẩn. Gọi một lần lúc dựng nhân vật.
+static func attach_knife(rig: Dictionary) -> Node3D:
+	var knife := Node3D.new()
+	knife.position = Vector3(0, -0.06, 0.03)
+	knife.rotation = Vector3(-1.35, 0, 0)
+	# cán gỗ rồi tới lưỡi dao inox bản to
+	knife.add_child(_mi(_bx(0.022, 0.022, 0.09), mat(Color8(0x8a, 0x5a, 0x33), 0.7), 0, 0, -0.04))
+	knife.add_child(_mi(_bx(0.012, 0.075, 0.17), mat(Color8(0xe8, 0xed, 0xf4), 0.25), 0, -0.02, 0.09))
+	knife.visible = false
+	rig["arms"][1]["hand"].add_child(knife)
+	return knife
+
+
 static func sit(rig: Dictionary, t: float) -> void:
 	var b: Dictionary = rig["build"]
 	rig["root"].position.y = -0.34 * float(b["h"])

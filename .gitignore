@@ -3,3 +3,6 @@
 /android/
 build/
 backups/
+
+# IP điện thoại lần cài gần nhất (install.sh tự ghi)
+.last-device
