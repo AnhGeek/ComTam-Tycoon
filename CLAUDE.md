@@ -23,6 +23,24 @@ stdout/stderr.
 để khách vào quán, ngồi, được phục vụ, ăn xong (11 giây) rồi về — dùng nó để
 chắc chắn không có lỗi runtime trong vòng đời của khách.
 
+### `data/balance.json` — bảng số cân bằng game
+
+Mọi con số cân bằng nằm ở đây, sửa xong chạy `./install.sh` là ra APK mới, **không
+phải đụng vào code**: giá bán và giá nâng cấp từng quầy, công thức nguyên liệu,
+giá nguyên liệu, giá mở khu, lò than, lò giữ nhiệt, lương nhân viên, giá trang
+trí/bàn ghế, thưởng nhiệm vụ, và mấy hệ số chung (tiền vốn, độ dài một ngày, độ
+kiên nhẫn của khách, hệ số nâng cấp mỗi cấp).
+
+`GameManager._load_balance()` đọc file này lúc khởi động rồi **ghi đè** lên số mặc
+định khai báo trong `scripts/game_manager.gd`. Thiếu khoá nào thì khoá đó giữ số
+mặc định, nên file JSON chỉ cần ghi phần muốn sửa. File hỏng cú pháp thì bỏ qua cả
+file và ghi cảnh báo — `install.sh` bắt lỗi này trước khi build.
+
+Vì vậy mấy bảng số trong `game_manager.gd` phải là `static var` chứ không được là
+`const` (const thì không ghi đè được). Và `export_presets.cfg` có
+`include_filter="data/*.json"` — JSON không phải "resource" của Godot nên thiếu
+dòng đó là file không được đóng gói vào APK.
+
 ### `install.sh`
 
 Xuất APK ký **release** (bắt buộc: máy đang cài bản release, APK debug sẽ bị

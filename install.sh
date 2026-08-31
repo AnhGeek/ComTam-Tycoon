@@ -34,6 +34,18 @@ done
 say() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 die() { printf '\n\033[1;31m!! %s\033[0m\n' "$*" >&2; exit 1; }
 
+# ---------- 0. Kiểm tra bảng số ----------
+# data/balance.json là chỗ chỉnh giá bán, giá nâng cấp, lương... Sai một dấu phẩy
+# là game im lặng quay về số mặc định, nên bắt lỗi ngay ở đây cho biết đường sửa.
+BALANCE="data/balance.json"
+if [ -f "$BALANCE" ] && command -v python >/dev/null 2>&1; then
+	if python -c "import io,json,sys; json.load(io.open(sys.argv[1],encoding='utf-8'))" "$BALANCE"; then
+		say "Bảng số $BALANCE: đọc được"
+	else
+		die "$BALANCE sai cú pháp JSON (hay gặp nhất: thừa hoặc thiếu dấu phẩy). Sửa xong chạy lại."
+	fi
+fi
+
 # ---------- 1. Xuất APK ký release ----------
 say "Xuất APK (release-signed)"
 [ -f "$KEYSTORE_DIR/comtamtycoon-release.jks" ] || die "Không thấy keystore trong $KEYSTORE_DIR"

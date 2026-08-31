@@ -20,17 +20,18 @@ signal reputation_changed
 signal grill_batch_ready(count: int)
 
 const SAVE_PATH := "user://com_tam_save.json"
-const DAY_DURATION := 180.0   # giây cho mỗi "ngày" trong game
+const BALANCE_PATH := "res://data/balance.json"   # bảng số chỉnh tay, xem _load_balance()
+static var DAY_DURATION := 180.0   # giây cho mỗi "ngày" trong game
 
 # ---------------- Dữ liệu tĩnh ----------------
 
-const FLOORS := [
+static var FLOORS := [
     {"id": "street", "name": "Quán vỉa hè", "note": "Ngõ chợ Bàn Cờ · Q.3", "cost": 0},
     {"id": "aircon", "name": "Phòng máy lạnh", "note": "Khách văn phòng, giá cao hơn", "cost": 2500000},
     {"id": "rooftop", "name": "Khu sân vườn", "note": "Bàn VIP, nướng than hoa", "cost": 12000000},
 ]
 
-const INGREDIENTS := {
+static var INGREDIENTS := {
     "rice": {"name": "Gạo tấm", "unit": "kg", "price": 8000, "pack": 50},
     "pork": {"name": "Sườn heo", "unit": "miếng", "price": 15000, "pack": 50},
     "egg": {"name": "Trứng gà", "unit": "quả", "price": 4000, "pack": 100},
@@ -56,7 +57,7 @@ static func shop_ingredients() -> Array:
     return out
 
 ## Mỗi quầy = một món; vị trí trong không gian 3D do TycoonWorld tự xếp theo khu.
-const STATIONS := {
+static var STATIONS := {
     "grill": {"floor": "street", "name": "Lò nướng thịt", "dish": "Cơm tấm sườn", "glyph": "▤",
         "recipe": {"grilled": 1}, "base_price": 45000, "cycle": 12.0,
         "batch": 2, "up_cost": 120000},
@@ -94,31 +95,42 @@ const STATIONS := {
 
 ## Lò than vỉa hè: nướng cả mẻ sườn cùng lúc, xong thì bưng vào quầy trong quán.
 ## Nâng cấp lò = mỗi mẻ nướng được nhiều miếng hơn.
-const GRILL_BATCH_BASE := 10       # số miếng một mẻ lúc lò còn cấp 1
-const GRILL_BATCH_STEP := 4        # mỗi cấp thêm chừng này miếng
-const GRILL_CYCLE := 24.0          # giây cho trọn một mẻ
-const GRILL_COAL := 1.0            # bao than cháy hết cho mỗi mẻ
-const GRILL_UP_COST := 240000.0
+static var GRILL_BATCH_BASE := 10   # số miếng một mẻ lúc lò còn cấp 1
+static var GRILL_BATCH_STEP := 4   # mỗi cấp thêm chừng này miếng
+static var GRILL_CYCLE := 24.0   # giây cho trọn một mẻ
+static var GRILL_COAL := 1.0   # bao than cháy hết cho mỗi mẻ
+static var GRILL_UP_COST := 240000.0
 
 ## Lò giữ nhiệt trong quầy: sườn nướng xong ngoài hiên bưng vào đây nằm chờ khách,
 ## nên nó quyết định quán trữ sẵn được bao nhiêu miếng. Lò đầy thì lò than ngoài
 ## hiên nghỉ tay — muốn nướng tiếp thì phải bán bớt hoặc nâng lò cho rộng chỗ.
-const WARMER_BASE := 14            # sức chứa lúc lò còn cấp 1
-const WARMER_STEP := 8             # mỗi cấp thêm chừng này chỗ
-const WARMER_UP_COST := 200000.0
+static var WARMER_BASE := 14   # sức chứa lúc lò còn cấp 1
+static var WARMER_STEP := 8   # mỗi cấp thêm chừng này chỗ
+static var WARMER_UP_COST := 200000.0
 
 ## Quản lý: thuê cho từng quầy để tự động thu tiền.
-const MANAGER_COST_MULT := 6.0
+static var MANAGER_COST_MULT := 6.0
+
+## Nâng cấp: mỗi cấp quầy đắt thêm bao nhiêu lần, nấu nhanh thêm bao nhiêu, và
+## mấy cấp thì được thêm một phần mỗi mẻ. Chỉnh trong data/balance.json.
+static var STATION_UP_MULT := 1.45
+static var LEVEL_SPEED_GAIN := 0.05
+static var LEVEL_BATCH_EVERY := 4
+static var GRILL_UP_MULT := 1.8
+static var WARMER_UP_MULT := 1.75
+
+## Tiền vốn lúc mở quán mới.
+static var START_MONEY := 3000000.0
 
 ## Nhân viên chung của quán.
-const STAFF := {
+static var STAFF := {
     "cook": {"name": "Phụ bếp", "desc": "-12% thời gian mỗi mẻ (cộng dồn)", "cost": 400000, "salary": 30000, "max": 5},
     "waiter": {"name": "Phục vụ", "desc": "+2 chỗ ngồi, khách chờ lâu hơn", "cost": 300000, "salary": 22000, "max": 5},
     "cashier": {"name": "Thu ngân", "desc": "+8% doanh thu mỗi người", "cost": 500000, "salary": 35000, "max": 4},
     "shipper": {"name": "Shipper", "desc": "+6% khách tới mỗi người", "cost": 350000, "salary": 25000, "max": 5},
 }
 
-const DECOR := {
+static var DECOR := {
     "plant": {"name": "Chậu cây xanh", "desc": "+2 điểm không khí", "cost": 120000, "amb": 2},
     "lantern": {"name": "Đèn lồng", "desc": "+3 điểm không khí", "cost": 200000, "amb": 3},
     "sign": {"name": "Bảng hiệu đèn LED", "desc": "+5 điểm không khí, khách tới nhanh", "cost": 450000, "amb": 5},
@@ -134,7 +146,7 @@ const DECOR := {
 ## Bàn ghế mua rời rồi tự tay đặt vào quán.
 ## "zone": "in" = trong nhà · "out" = vỉa hè · "any" = đặt đâu cũng được.
 ## "w"/"d" là bề ngang · bề sâu chỗ chiếm (mét) dùng để kiểm tra chồng chỗ.
-const FURNITURE := {
+static var FURNITURE := {
     "stool_set": {"name": "Bàn nhựa vỉa hè", "desc": "Bàn thấp + 4 ghế nhựa, kiểu quán cóc",
         "cost": 180000, "seats": 4, "amb": 1, "zone": "any", "w": 1.55, "d": 1.55},
     "table_steel": {"name": "Bàn inox 4 ghế", "desc": "Bàn inox chắc chắn, kê trong quán",
@@ -146,11 +158,11 @@ const FURNITURE := {
 }
 
 ## Thu nhập khi vắng mặt: chỉ quầy có quản lý mới chạy, hiệu suất 50%, tối đa 4 giờ.
-const OFFLINE_MAX_SECONDS := 14400.0
-const OFFLINE_RATE := 0.5
+static var OFFLINE_MAX_SECONDS := 14400.0
+static var OFFLINE_RATE := 0.5
 
 ## Nhiệm vụ: "kind" là tên chỉ số trong `stats`, đạt "target" thì nhận thưởng.
-const MISSIONS := [
+static var MISSIONS := [
     {"id": "serve50", "name": "Bán 50 phần cơm", "kind": "served", "target": 50, "reward": 200000},
     {"id": "up5", "name": "Nâng cấp quầy 5 lần", "kind": "upgrades", "target": 5, "reward": 350000},
     {"id": "staff3", "name": "Thuê 3 nhân viên", "kind": "staff", "target": 3, "reward": 400000},
@@ -199,6 +211,7 @@ var logs: Array[String] = []
 
 
 func _ready() -> void:
+    _load_balance()
     _reset_defaults()
     if FileAccess.file_exists(SAVE_PATH):
         if load_game():
@@ -206,8 +219,117 @@ func _ready() -> void:
     process_mode = Node.PROCESS_MODE_ALWAYS
 
 
+## Đọc bảng số ở `data/balance.json` rồi ghi đè lên số mặc định trong file này.
+##
+## Ý tưởng: mọi con số cân bằng game (giá bán, giá nâng cấp, tiền lương, sức chứa,
+## thưởng nhiệm vụ...) đều sửa được ngoài file JSON, sửa xong chạy `install.sh` là
+## ra APK mới, khỏi đụng vào code. Thiếu khoá nào thì khoá đó giữ số mặc định, nên
+## file JSON có thể chỉ ghi vài dòng cần sửa. File hỏng cú pháp thì bỏ qua cả file
+## và ghi cảnh báo, game vẫn chạy bằng số mặc định.
+func _load_balance() -> void:
+    if not FileAccess.file_exists(BALANCE_PATH):
+        return
+    var f := FileAccess.open(BALANCE_PATH, FileAccess.READ)
+    if f == null:
+        return
+    var raw = JSON.parse_string(f.get_as_text())
+    f.close()
+    if typeof(raw) != TYPE_DICTIONARY:
+        push_warning("data/balance.json sai cú pháp — dùng số mặc định")
+        return
+    var d: Dictionary = raw
+
+    _merge_rows(d.get("stations", {}), STATIONS,
+        {"name": TYPE_STRING, "dish": TYPE_STRING, "base_price": TYPE_FLOAT,
+        "cycle": TYPE_FLOAT, "batch": TYPE_INT, "up_cost": TYPE_FLOAT,
+        "recipe": TYPE_DICTIONARY})
+    _merge_rows(d.get("ingredients", {}), INGREDIENTS,
+        {"name": TYPE_STRING, "price": TYPE_FLOAT, "pack": TYPE_INT})
+    _merge_rows(d.get("staff", {}), STAFF,
+        {"cost": TYPE_FLOAT, "salary": TYPE_FLOAT, "max": TYPE_INT})
+    _merge_rows(d.get("decor", {}), DECOR,
+        {"cost": TYPE_FLOAT, "amb": TYPE_INT, "seats": TYPE_INT})
+    _merge_rows(d.get("furniture", {}), FURNITURE,
+        {"cost": TYPE_FLOAT, "seats": TYPE_INT, "amb": TYPE_INT})
+
+    # khu và nhiệm vụ là mảng, phải dò theo "id"
+    var fl = d.get("floors", {})
+    if typeof(fl) == TYPE_DICTIONARY:
+        for row in FLOORS:
+            var src = fl.get(str(row["id"]))
+            if typeof(src) == TYPE_DICTIONARY and (src as Dictionary).has("cost"):
+                row["cost"] = float((src as Dictionary)["cost"])
+    var ms = d.get("missions", {})
+    if typeof(ms) == TYPE_DICTIONARY:
+        for row in MISSIONS:
+            var src2 = ms.get(str(row["id"]))
+            if typeof(src2) != TYPE_DICTIONARY:
+                continue
+            var sd: Dictionary = src2
+            if sd.has("target"):
+                row["target"] = float(sd["target"])
+            if sd.has("reward"):
+                row["reward"] = float(sd["reward"])
+
+    var g = d.get("grill", {})
+    if typeof(g) == TYPE_DICTIONARY:
+        var gd: Dictionary = g
+        GRILL_BATCH_BASE = int(gd.get("batch_base", GRILL_BATCH_BASE))
+        GRILL_BATCH_STEP = int(gd.get("batch_step", GRILL_BATCH_STEP))
+        GRILL_CYCLE = float(gd.get("cycle", GRILL_CYCLE))
+        GRILL_COAL = float(gd.get("coal_per_batch", GRILL_COAL))
+        GRILL_UP_COST = float(gd.get("up_cost", GRILL_UP_COST))
+        GRILL_UP_MULT = float(gd.get("up_mult", GRILL_UP_MULT))
+
+    var w = d.get("warmer", {})
+    if typeof(w) == TYPE_DICTIONARY:
+        var wd: Dictionary = w
+        WARMER_BASE = int(wd.get("base", WARMER_BASE))
+        WARMER_STEP = int(wd.get("step", WARMER_STEP))
+        WARMER_UP_COST = float(wd.get("up_cost", WARMER_UP_COST))
+        WARMER_UP_MULT = float(wd.get("up_mult", WARMER_UP_MULT))
+
+    var m = d.get("chung", d.get("misc", {}))
+    if typeof(m) == TYPE_DICTIONARY:
+        var md: Dictionary = m
+        START_MONEY = float(md.get("start_money", START_MONEY))
+        DAY_DURATION = float(md.get("day_duration", DAY_DURATION))
+        CUSTOMER_PATIENCE = float(md.get("customer_patience", CUSTOMER_PATIENCE))
+        MANAGER_COST_MULT = float(md.get("manager_cost_mult", MANAGER_COST_MULT))
+        STATION_UP_MULT = float(md.get("station_up_mult", STATION_UP_MULT))
+        LEVEL_SPEED_GAIN = float(md.get("level_speed_gain", LEVEL_SPEED_GAIN))
+        LEVEL_BATCH_EVERY = int(md.get("level_batch_every", LEVEL_BATCH_EVERY))
+        OFFLINE_MAX_SECONDS = float(md.get("offline_max_seconds", OFFLINE_MAX_SECONDS))
+        OFFLINE_RATE = float(md.get("offline_rate", OFFLINE_RATE))
+
+
+## Chép những khoá cho phép sửa từ bảng JSON sang bảng số của game, ép đúng kiểu
+## (JSON đọc số nào cũng ra float, để nguyên là chỗ nào cần số nguyên sẽ lệch).
+func _merge_rows(src, dst: Dictionary, fields: Dictionary) -> void:
+    if typeof(src) != TYPE_DICTIONARY:
+        return
+    var rows: Dictionary = src
+    for id in rows:
+        if not dst.has(id) or typeof(rows[id]) != TYPE_DICTIONARY:
+            continue
+        var row: Dictionary = rows[id]
+        for key in fields:
+            if not row.has(key):
+                continue
+            match int(fields[key]):
+                TYPE_INT:
+                    dst[id][key] = int(row[key])
+                TYPE_FLOAT:
+                    dst[id][key] = float(row[key])
+                TYPE_DICTIONARY:
+                    if typeof(row[key]) == TYPE_DICTIONARY:
+                        dst[id][key] = (row[key] as Dictionary).duplicate()
+                _:
+                    dst[id][key] = str(row[key])
+
+
 func _reset_defaults() -> void:
-    money = 3000000.0
+    money = START_MONEY
     day = 1
     day_time = 0.0
     reputation = 50.0
@@ -297,7 +419,7 @@ func is_station_open(id: String) -> bool:
 
 func station_upgrade_cost(id: String) -> int:
     var lv := station_level(id)
-    return int(round(float(STATIONS[id]["up_cost"]) * pow(1.45, maxi(lv, 0))))
+    return int(round(float(STATIONS[id]["up_cost"]) * pow(STATION_UP_MULT, maxi(lv, 0))))
 
 
 func manager_cost(id: String) -> int:
@@ -311,7 +433,7 @@ func has_manager(id: String) -> bool:
 ## Thời gian một mẻ, đã tính cấp quầy và phụ bếp.
 func station_cycle(id: String) -> float:
     var lv := maxi(station_level(id), 1)
-    var t := float(STATIONS[id]["cycle"]) / (1.0 + 0.05 * (lv - 1))
+    var t := float(STATIONS[id]["cycle"]) / (1.0 + LEVEL_SPEED_GAIN * (lv - 1))
     t *= pow(0.88, float(staff.get("cook", 0)))
     return maxf(t, 0.6)
 
@@ -319,7 +441,7 @@ func station_cycle(id: String) -> float:
 ## Số phần làm ra mỗi mẻ.
 func station_batch(id: String) -> int:
     var lv := maxi(station_level(id), 1)
-    return int(STATIONS[id]["batch"]) + int(floor((lv - 1) / 4.0))
+    return int(STATIONS[id]["batch"]) + int(floor(float(lv - 1) / float(maxi(LEVEL_BATCH_EVERY, 1))))
 
 
 ## Một mẻ nướng được bao nhiêu miếng sườn.
@@ -328,7 +450,7 @@ func grill_batch() -> int:
 
 
 func grill_upgrade_cost() -> float:
-    return GRILL_UP_COST * pow(1.8, float(grill_level - 1))
+    return GRILL_UP_COST * pow(GRILL_UP_MULT, float(grill_level - 1))
 
 
 ## Còn than là lò còn đỏ lửa, dù chưa có miếng sườn nào trên vỉ. Hết sườn chỉ là
@@ -351,7 +473,7 @@ func warmer_capacity() -> int:
 
 
 func warmer_upgrade_cost() -> float:
-    return WARMER_UP_COST * pow(1.75, float(warmer_level - 1))
+    return WARMER_UP_COST * pow(WARMER_UP_MULT, float(warmer_level - 1))
 
 
 ## Lò đang đầy tới đâu, 0..1 — dùng cho thanh mức và cho số miếng bày trong lò.
@@ -494,7 +616,7 @@ func income_per_second(station_id: String = "") -> float:
 ## Khách ngồi xuống là bắt đầu đếm giờ. Hết chừng này giây mà chưa ai bưng cơm
 ## ra thì họ bỏ về. Tạm để chung một mức cho mọi loại khách; sau này muốn khách
 ## sang chảnh mất kiên nhẫn nhanh hơn thì tách theo từng loại.
-const CUSTOMER_PATIENCE := 28.0
+static var CUSTOMER_PATIENCE := 28.0
 
 ## Bỏ về thì quán mất bao nhiêu uy tín, tuỳ loại khách: khách quen dễ tính mất
 ## ít, khách văn phòng hay khách du lịch còn đi kể với người khác nên mất nhiều.

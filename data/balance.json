@@ -1,0 +1,352 @@
+{
+	"_huong_dan": [
+		"Bảng số của game: sửa file này rồi chạy install.sh là ra APK mới, khỏi đụng code.",
+		"Thiếu khoá nào thì khoá đó giữ số mặc định trong scripts/game_manager.gd.",
+		"stations: mỗi quầy — base_price (giá bán một phần), cycle (giây một mẻ),",
+		"  batch (số phần một mẻ), up_cost (giá nâng cấp cấp 1; các cấp sau nhân dần",
+		"  theo chung.station_up_mult), recipe (nguyên liệu tốn cho một phần).",
+		"ingredients: price là giá MỘT đơn vị, pack là số đơn vị trong một bao.",
+		"floors.cost: giá mở khu. grill: lò than vỉa hè. warmer: lò giữ nhiệt.",
+		"chung: mấy con số dùng chung cho cả game."
+	],
+	"stations": {
+		"grill": {
+			"name": "Lò nướng thịt",
+			"dish": "Cơm tấm sườn",
+			"base_price": 45000,
+			"cycle": 12.0,
+			"batch": 2,
+			"up_cost": 120000,
+			"recipe": {
+				"grilled": 1
+			}
+		},
+		"rice": {
+			"name": "Nồi cơm tấm",
+			"dish": "Cơm tấm trứng",
+			"base_price": 35000,
+			"cycle": 10.0,
+			"batch": 2,
+			"up_cost": 90000,
+			"recipe": {
+				"rice": 1,
+				"gas": 1
+			}
+		},
+		"prep": {
+			"name": "Bàn bì & chả",
+			"dish": "Cơm tấm bì chả",
+			"base_price": 50000,
+			"cycle": 15.0,
+			"batch": 2,
+			"up_cost": 160000,
+			"recipe": {
+				"bi": 1,
+				"cha": 1
+			}
+		},
+		"drink": {
+			"name": "Quầy trà đá",
+			"dish": "Trà đá · nước sâm",
+			"base_price": 10000,
+			"cycle": 8.0,
+			"batch": 3,
+			"up_cost": 60000,
+			"recipe": {
+				"ice": 1,
+				"tea": 1
+			}
+		},
+		"combo": {
+			"name": "Bàn cơm phần",
+			"dish": "Cơm tấm thập cẩm",
+			"base_price": 85000,
+			"cycle": 20.0,
+			"batch": 2,
+			"up_cost": 320000,
+			"recipe": {
+				"rice": 1,
+				"pork": 1,
+				"bi": 1,
+				"cha": 1,
+				"egg": 1
+			}
+		},
+		"dessert": {
+			"name": "Quầy chè",
+			"dish": "Chè · sương sáo",
+			"base_price": 25000,
+			"cycle": 12.0,
+			"batch": 3,
+			"up_cost": 210000,
+			"recipe": {
+				"veg": 1,
+				"tea": 1
+			}
+		},
+		"office": {
+			"name": "Cơm hộp văn phòng",
+			"dish": "Cơm hộp giao đi",
+			"base_price": 60000,
+			"cycle": 16.0,
+			"batch": 3,
+			"up_cost": 400000,
+			"recipe": {
+				"rice": 1,
+				"pork": 1,
+				"veg": 1
+			}
+		},
+		"bbq": {
+			"name": "Lò than hoa",
+			"dish": "Sườn nướng than",
+			"base_price": 140000,
+			"cycle": 22.0,
+			"batch": 2,
+			"up_cost": 900000,
+			"recipe": {
+				"pork": 2,
+				"veg": 1
+			}
+		},
+		"vip": {
+			"name": "Bàn VIP",
+			"dish": "Set cơm tấm VIP",
+			"base_price": 220000,
+			"cycle": 30.0,
+			"batch": 1,
+			"up_cost": 1500000,
+			"recipe": {
+				"rice": 2,
+				"pork": 1,
+				"cha": 1,
+				"egg": 1
+			}
+		},
+		"juice": {
+			"name": "Quầy nước ép",
+			"dish": "Nước ép trái cây",
+			"base_price": 45000,
+			"cycle": 12.0,
+			"batch": 3,
+			"up_cost": 600000,
+			"recipe": {
+				"veg": 1,
+				"tea": 1
+			}
+		}
+	},
+	"ingredients": {
+		"rice": {
+			"name": "Gạo tấm",
+			"price": 8000,
+			"pack": 50
+		},
+		"pork": {
+			"name": "Sườn heo",
+			"price": 15000,
+			"pack": 50
+		},
+		"egg": {
+			"name": "Trứng gà",
+			"price": 4000,
+			"pack": 100
+		},
+		"bi": {
+			"name": "Bì heo",
+			"price": 6000,
+			"pack": 50
+		},
+		"cha": {
+			"name": "Chả trứng",
+			"price": 10000,
+			"pack": 50
+		},
+		"veg": {
+			"name": "Đồ chua · rau",
+			"price": 3000,
+			"pack": 50
+		},
+		"tea": {
+			"name": "Trà",
+			"price": 5000,
+			"pack": 50
+		},
+		"ice": {
+			"name": "Đá bi lạnh",
+			"price": 3000,
+			"pack": 50
+		},
+		"coal": {
+			"name": "Than đá",
+			"price": 24000,
+			"pack": 20
+		},
+		"gas": {
+			"name": "Gas",
+			"price": 12000,
+			"pack": 20
+		},
+		"grilled": {
+			"name": "Sườn nướng sẵn",
+			"price": 19000,
+			"pack": 0
+		}
+	},
+	"floors": {
+		"street": {
+			"cost": 0
+		},
+		"aircon": {
+			"cost": 2500000
+		},
+		"rooftop": {
+			"cost": 12000000
+		}
+	},
+	"grill": {
+		"batch_base": 10,
+		"batch_step": 4,
+		"cycle": 24.0,
+		"coal_per_batch": 1.0,
+		"up_cost": 240000.0,
+		"up_mult": 1.8
+	},
+	"warmer": {
+		"base": 14,
+		"step": 8,
+		"up_cost": 200000.0,
+		"up_mult": 1.75
+	},
+	"staff": {
+		"cook": {
+			"cost": 400000,
+			"salary": 30000,
+			"max": 5
+		},
+		"waiter": {
+			"cost": 300000,
+			"salary": 22000,
+			"max": 5
+		},
+		"cashier": {
+			"cost": 500000,
+			"salary": 35000,
+			"max": 4
+		},
+		"shipper": {
+			"cost": 350000,
+			"salary": 25000,
+			"max": 5
+		}
+	},
+	"decor": {
+		"plant": {
+			"cost": 120000,
+			"amb": 2
+		},
+		"lantern": {
+			"cost": 200000,
+			"amb": 3
+		},
+		"sign": {
+			"cost": 450000,
+			"amb": 5
+		},
+		"fan": {
+			"cost": 300000,
+			"amb": 3
+		},
+		"table": {
+			"cost": 380000,
+			"seats": 2
+		},
+		"aquarium": {
+			"cost": 900000,
+			"amb": 8
+		},
+		"dog": {
+			"cost": 260000,
+			"amb": 4
+		}
+	},
+	"furniture": {
+		"stool_set": {
+			"cost": 180000,
+			"seats": 4,
+			"amb": 1
+		},
+		"table_steel": {
+			"cost": 420000,
+			"seats": 4,
+			"amb": 2
+		},
+		"table_wood": {
+			"cost": 1350000,
+			"seats": 6,
+			"amb": 4
+		},
+		"parasol": {
+			"cost": 260000,
+			"seats": 0,
+			"amb": 3
+		}
+	},
+	"missions": {
+		"serve50": {
+			"target": 50,
+			"reward": 200000
+		},
+		"up5": {
+			"target": 5,
+			"reward": 350000
+		},
+		"staff3": {
+			"target": 3,
+			"reward": 400000
+		},
+		"boost100": {
+			"target": 100,
+			"reward": 250000
+		},
+		"mgr1": {
+			"target": 1,
+			"reward": 500000
+		},
+		"decor3": {
+			"target": 3,
+			"reward": 300000
+		},
+		"earn5m": {
+			"target": 5000000,
+			"reward": 800000
+		},
+		"floor2": {
+			"target": 2,
+			"reward": 1000000
+		},
+		"serve300": {
+			"target": 300,
+			"reward": 2000000
+		},
+		"rep80": {
+			"target": 80,
+			"reward": 1500000
+		},
+		"floor3": {
+			"target": 3,
+			"reward": 5000000
+		}
+	},
+	"chung": {
+		"start_money": 3000000.0,
+		"day_duration": 180.0,
+		"customer_patience": 28.0,
+		"manager_cost_mult": 6.0,
+		"station_up_mult": 1.45,
+		"level_speed_gain": 0.05,
+		"level_batch_every": 4,
+		"offline_max_seconds": 14400.0,
+		"offline_rate": 0.5
+	}
+}
