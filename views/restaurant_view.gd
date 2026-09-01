@@ -14,6 +14,7 @@ var tag_box: HBoxContainer
 var collect_btn: Button
 var floor_btns: Array = []
 var strip_box: BoxContainer
+var strip_title: Label
 var strip_cards: Dictionary = {}
 var strip_floor := -1
 var card_layer: Control
@@ -374,9 +375,11 @@ func _build_dock() -> Control:
 	head.add_theme_constant_override("separation", int(UIKit.px(8)))
 	v.add_child(head)
 	head.add_child(UIIcon.make("seat", UIKit.px(18), UIKit.D_TITLE))
-	var head_l := UIKit.label("CÁC QUẦY", 14, UIKit.D_TITLE)
-	head_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	head.add_child(head_l)
+	strip_title = UIKit.label("CÁC QUẦY", 14, UIKit.D_TITLE)
+	strip_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	strip_title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	strip_title.clip_text = true
+	head.add_child(strip_title)
 
 	# cột quầy của khu đang xem: xem cấp, tiến độ và nâng cấp bằng một chạm
 	var strip_scroll := ScrollContainer.new()
@@ -542,7 +545,10 @@ func _rebuild_strip() -> void:
 		c.queue_free()
 	strip_cards.clear()
 
-	var fid := str(GameManager.FLOORS[strip_floor]["id"])
+	var f: Dictionary = GameManager.FLOORS[strip_floor]
+	var fid := str(f["id"])
+	if strip_title != null:
+		strip_title.text = "K%d · %s" % [strip_floor + 1, str(f["name"]).to_upper()]
 	if not GameManager.is_floor_unlocked(fid):
 		var note := UIKit.label("Khu này chưa mở — chạm vào bảng ngoài lô đất để mở khoá.", 12, UIKit.D_MUTED)
 		note.custom_minimum_size = Vector2(0, 0)
@@ -550,12 +556,67 @@ func _rebuild_strip() -> void:
 		strip_box.add_child(note)
 		return
 
+	# Thẻ đầu dải là của RIÊNG khu đang xem — bấm K1/K2/K3 là thấy nó đổi ngay.
+	strip_box.add_child(_floor_card(fid))
+	strip_box.add_child(UIKit.label("DÃY QUẦY CỦA KHU NÀY · KHO DÙNG CHUNG", 10, UIKit.D_MUTED))
 	for sid in GameManager.stations_on_floor(fid):
 		strip_box.add_child(_strip_card(str(sid)))
 
 
+## Tình hình một khu: chỗ ngồi, người làm, không khí, khách kéo về và mấy món
+## khách khu này gọi. Bốn cái quầy thì khu nào cũng xài chung nên không kể ở đây.
+func _floor_card(fid: String) -> Control:
+	var card := UIKit.dark_panel(UIKit.D_CARD, 8, UIKit.RADIUS_SM)
+	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", int(UIKit.px(3)))
+	card.add_child(v)
+
+	var top := HBoxContainer.new()
+	top.add_theme_constant_override("separation", int(UIKit.px(5)))
+	v.add_child(top)
+	top.add_child(UIIcon.make("seat", UIKit.px(16), UIKit.NEON_GOLD))
+	var nm := UIKit.label(str(GameManager.floor_data(fid)["name"]), 12, UIKit.D_TEXT)
+	nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	nm.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	nm.clip_text = true
+	top.add_child(nm)
+	var mng := GameManager.floor_managers(fid)
+	top.add_child(UIKit.label("%d quản lý" % mng if mng > 0 else "chưa có quản lý", 11,
+		UIKit.NEON_GREEN if mng > 0 else UIKit.D_MUTED))
+
+	var note := UIKit.label(str(GameManager.floor_data(fid)["note"]), 11, UIKit.D_MUTED)
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	v.add_child(note)
+
+	var line := UIKit.label("%d chỗ ngồi · %d phục vụ · %d shipper" % [
+		GameManager.floor_seats(fid),
+		GameManager.staff_count(fid, "waiter"),
+		GameManager.staff_count(fid, "shipper")], 11, UIKit.D_TEXT)
+	v.add_child(line)
+
+	var line2 := UIKit.label("không khí +%d · %d khách/phút · lương %s ₫/ngày" % [
+		GameManager.floor_ambiance(fid),
+		int(round(GameManager.floor_arrival_rate(fid))),
+		UIKit.money(GameManager.floor_salary(fid))], 11, UIKit.D_MUTED)
+	v.add_child(line2)
+
+	# Mỗi khu bán một mớ món khác nhau, ghi ra cho biết khách ở đây gọi gì
+	var dishes: Array = []
+	for did in GameManager.MENU:
+		var dish: Dictionary = GameManager.MENU[did]
+		var where: Array = dish.get("where", [])
+		if fid in where:
+			dishes.append(str(dish["name"]))
+	if not dishes.is_empty():
+		var mn := UIKit.label("Bán: " + ", ".join(dishes), 11, UIKit.NEON_BLUE)
+		mn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		v.add_child(mn)
+	return card
+
+
 func _strip_card(sid: String) -> Control:
-	var data: Dictionary = GameManager.STATIONS[sid]
+	var data: Dictionary = GameManager.station_def(sid)
 	var card := UIKit.dark_panel(UIKit.D_CARD, 8, UIKit.RADIUS_SM)
 	card.custom_minimum_size = Vector2(0, UIKit.px(52))
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -628,7 +689,7 @@ func _sync_strip() -> void:
 		# tiến độ MẺ ĐANG NƯỚNG chứ không phải nhịp ra phần cơm: hết than là lò
 		# nguội, thanh đứng im tại chỗ cho tới khi nhập than về.
 		var prog := float(GameManager.progress.get(sid, 0.0))
-		if str(sid) == "grill":
+		if GameManager.station_base(str(sid)) == "grill":
 			prog = GameManager.grill_progress
 		(r["bar"] as ProgressBar).value = prog * 100.0
 		var note: Label = r["note"]
@@ -651,7 +712,7 @@ func _sync_strip() -> void:
 		else:
 			# đang chờ bán bao nhiêu phần + tiền đang nằm ở quầy
 			var waiting := int(GameManager.pending_portions.get(sid, 0.0))
-			if str(sid) == "grill":
+			if GameManager.station_base(str(sid)) == "grill":
 				# lò giữ nhiệt: thứ đáng nhìn nhất là còn mấy miếng trong lò
 				note.text = "%d/%d miếng trong lò" % [
 					int(GameManager.stock.get("grilled", 0.0)),
@@ -670,7 +731,7 @@ func _sync_strip() -> void:
 ## ăn sườn nướng thì phải trông cả kho của lò: hết sườn sống hay hết than là báo
 ## ngay, khỏi đợi tới lúc quầy sạch sườn mới biết.
 func _restock_list(sid: String) -> Array:
-	var recipe: Dictionary = GameManager.STATIONS[sid]["recipe"]
+	var recipe: Dictionary = GameManager.station_def(sid)["recipe"]
 	var out: Array = []
 	for ing in recipe:
 		if not bool(GameManager.INGREDIENTS[ing].get("shop", true)):
@@ -741,7 +802,7 @@ func _on_buy_chip(b: Button, ing: String) -> void:
 
 
 func _on_boosted(sid: String) -> void:
-	_toast("Nấu nhanh " + str(GameManager.STATIONS[sid]["name"]).to_lower() + "!")
+	_toast("Nấu nhanh " + str(GameManager.station_def(sid)["name"]).to_lower() + "!")
 
 
 ## Hộp thoại chào mừng: tiền quán kiếm được lúc người chơi đóng game.
@@ -980,7 +1041,7 @@ const STATION_ICONS := {
 
 
 func _station_icon(sid: String) -> String:
-	return str(STATION_ICONS.get(sid, "bowl"))
+	return str(STATION_ICONS.get(GameManager.station_base(sid), "bowl"))
 
 
 ## Khung bảng tối: nền mờ (chạm ra ngoài là đóng) + tấm bảng bo góc ở giữa.
@@ -1045,8 +1106,9 @@ func _sheet_header(parent: VBoxContainer, title: String, icon_kind: String) -> v
 
 ## Bảng của một quầy: chỉ số, hai tab, thẻ nâng cấp, thanh cấp và hàng ô chọn quầy.
 func _show_station_card(sid: String, tab: String = "upgrade") -> void:
-	var data: Dictionary = GameManager.STATIONS[sid]
-	var fid := str(data["floor"])
+	var data: Dictionary = GameManager.station_def(sid)
+	# hỏi khoá ghép chứ đừng hỏi bảng số: bảng số ghi "street" cho cả bốn quầy
+	var fid := GameManager.station_floor(sid)
 	var v := _sheet_shell()
 	# tiêu đề nói rõ đang làm gì với khu nào: "NÂNG CẤP QUÁN VỈA HÈ"
 	var zone := str(GameManager.floor_data(fid)["name"])
@@ -1084,7 +1146,7 @@ func _show_station_card(sid: String, tab: String = "upgrade") -> void:
 		# dây sườn nướng có hai cái lò, hai lộ trình nâng cấp riêng: lò than ngoài
 		# hiên nướng nhiều miếng hơn mỗi mẻ, lò giữ nhiệt trong quầy trữ được nhiều
 		# miếng hơn cho giờ cao điểm
-		if sid == "grill":
+		if GameManager.station_base(sid) == "grill":
 			v.add_child(_grill_paths())
 
 	# ---- hàng ô chọn quầy trong cùng khu ----
@@ -1105,7 +1167,7 @@ func _show_station_card(sid: String, tab: String = "upgrade") -> void:
 ## Thẻ nâng cấp: icon vuông, tên + mô tả, giá và nút xanh lá, hàng thưởng thêm
 ## và thanh cấp độ chạy dưới cùng.
 func _upgrade_card(sid: String) -> Control:
-	var data: Dictionary = GameManager.STATIONS[sid]
+	var data: Dictionary = GameManager.station_def(sid)
 	var lv := GameManager.station_level(sid)
 	var cost := float(GameManager.station_upgrade_cost(sid))
 	var card := UIKit.dark_panel(UIKit.D_CARD, 10, UIKit.RADIUS)
@@ -1283,7 +1345,7 @@ func _grill_paths() -> Control:
 
 ## Tab quản lý: thuê người trông quầy để tiền tự chảy về, khỏi chạm bong bóng.
 func _manager_card(sid: String) -> Control:
-	var data: Dictionary = GameManager.STATIONS[sid]
+	var data: Dictionary = GameManager.station_def(sid)
 	var card := UIKit.dark_panel(UIKit.D_CARD, 10, UIKit.RADIUS)
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", int(UIKit.px(7)))
@@ -1303,7 +1365,7 @@ func _manager_card(sid: String) -> Control:
 	mid.add_theme_constant_override("separation", int(UIKit.px(3)))
 	top.add_child(mid)
 	mid.add_child(UIKit.label("QUẢN LÝ QUẦY", 16, UIKit.D_TITLE))
-	var zname := str(GameManager.floor_data(str(data["floor"]))["name"]).to_lower()
+	var zname := str(GameManager.floor_data(GameManager.station_floor(sid))["name"]).to_lower()
 	var desc := UIKit.label("Thuê người trông quầy: tiền tự thu về, khỏi chạm bong bóng. "
 		+ "Quản lý ra đứng trông ngay tại " + zname + ".", 10, UIKit.D_MUTED)
 	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -1403,7 +1465,7 @@ func _show_floor_card(fid: String) -> void:
 	v.add_child(UIKit.separator())
 	var names: Array = []
 	for sid in GameManager.stations_on_floor(fid):
-		names.append(str(GameManager.STATIONS[sid]["name"]))
+		names.append(str(GameManager.station_def(sid)["name"]))
 	v.add_child(UIKit.muted("Mở kèm: " + ", ".join(names).to_lower(), 12))
 	v.add_child(UIKit.muted("Thêm 4 chỗ ngồi và +5 uy tín.", 12))
 

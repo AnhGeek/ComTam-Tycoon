@@ -1,12 +1,25 @@
 extends Control
-## Màn hình mua sắm: nguyên liệu · nhân viên · trang trí · kho lạnh.
+## Màn hình mua sắm: nguyên liệu · nhân viên · trang trí · kho lạnh · kho đồ khô.
+##
+## Hai tab kho dùng chung một hàm dựng (`_build_store`) vì tủ lạnh và kệ đồ khô
+## chạy y hệt nhau: mỗi khu tự mua của khu mình, nâng cấp riêng, chỗ trữ góp chung.
+## `store_kind` nói tab đó là kho nào trong `GameManager.STORAGE`.
 
 const TABS := [
     {"id": "ingredients", "label": "Nguyên liệu"},
     {"id": "staff", "label": "Nhân viên"},
     {"id": "decor", "label": "Trang trí"},
-    {"id": "cold", "label": "Kho lạnh"},
+    {"id": "cold", "label": "Kho lạnh", "store_kind": "fridge"},
+    {"id": "dry", "label": "Kho khô", "store_kind": "pantry"},
 ]
+
+
+## Tab đang mở là kho nào — rỗng nghĩa là tab đó không phải tab kho.
+static func store_kind_of(tab: String) -> String:
+    for t in TABS:
+        if str(t["id"]) == tab:
+            return str(t.get("store_kind", ""))
+    return ""
 
 var current := "ingredients"
 ## Đang mua sắm cho khu nào — nhân viên với trang trí đều tính riêng từng khu,
@@ -130,8 +143,7 @@ func _refresh_floor_row() -> void:
         shop_floor = str(GameManager.FLOORS[0]["id"])
     if current == "ingredients":
         floor_row.visible = false
-        floor_note.text = "Kho nguyên liệu dùng chung cho cả 3 khu · đồ tươi trữ tối đa %d mỗi món" \
-            % GameManager.cold_capacity()
+        floor_note.text = "Kho nguyên liệu dùng chung cho cả 3 khu · mỗi món một trần riêng"
         return
     floor_row.visible = true
     for f in GameManager.FLOORS:
@@ -150,9 +162,12 @@ func _refresh_floor_row() -> void:
     if current == "staff":
         floor_note.text = "Đang thuê người cho: %s · lương khu này %s ₫/ngày" % [
             fname, UIKit.money(GameManager.floor_salary(shop_floor))]
-    elif current == "cold":
-        floor_note.text = "Tủ lạnh của: %s · %d cái, cấp %d" % [
-            fname, GameManager.fridge_count(shop_floor), GameManager.fridge_level(shop_floor)]
+    elif not store_kind_of(current).is_empty():
+        var kind := store_kind_of(current)
+        floor_note.text = "%s của: %s · %d cái, cấp %d" % [
+            str(GameManager.STORAGE[kind]["unit_name"]), fname,
+            GameManager.store_count(kind, shop_floor),
+            GameManager.store_level(kind, shop_floor)]
     else:
         floor_note.text = "Đang bày biện cho: " + fname
 
@@ -193,7 +208,9 @@ func _rebuild_list() -> void:
         "decor":
             _build_decor()
         "cold":
-            _build_cold()
+            _build_store("fridge")
+        "dry":
+            _build_store("pantry")
     _refresh_money()
 
 
@@ -229,29 +246,32 @@ func _build_ingredients() -> void:
         info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
         info.add_theme_constant_override("separation", 3)
         h.add_child(info)
-        info.add_child(UIKit.label(str(d["name"]), 15, UIKit.ACCENT_900))
-        var low := qty <= 5.0
-        var cold := GameManager.is_cold(id)
-        var cap := float(GameManager.cold_capacity())
-        var full := cold and qty >= cap
-        var stock_col := UIKit.BAD if low else UIKit.N700
-        # Đồ tươi đo theo trần kho lạnh, đồ khô thì chất bao nhiêu cũng được nên
-        # cứ lấy mốc 60 cho dễ nhìn.
-        var line := "Còn %d %s · lố %d · %s ₫/%s" % [
-            int(qty), str(d["unit"]), pack, UIKit.money(float(d["price"])), str(d["unit"])]
-        if cold:
-            line = "Còn %d/%d %s · lố %d · %s ₫/%s" % [
-                int(qty), int(cap), str(d["unit"]), pack,
-                UIKit.money(float(d["price"])), str(d["unit"])]
-        info.add_child(UIKit.label(line, 11, stock_col))
-        var pct := qty / cap * 100.0 if cold else qty / 60.0 * 100.0
-        var bar_col: Color = UIKit.BAD if low else (UIKit.WARN if full else UIKit.ACCENT)
-        var bar := UIKit.bar(clampf(pct, 0.0, 100.0), bar_col, 5)
-        info.add_child(bar)
-        if full:
-            info.add_child(UIKit.muted("Kho lạnh đầy — kê thêm tủ lạnh mới nhập được nữa", 11))
+        var nr := HBoxContainer.new()
+        nr.add_theme_constant_override("separation", 6)
+        info.add_child(nr)
+        nr.add_child(UIKit.label(str(d["name"]), 15, UIKit.ACCENT_900))
+        # nói luôn món này nằm kho nào, để biết phải kê thêm tủ hay thêm kệ
+        var kind := GameManager.storage_of(str(id))
+        if not kind.is_empty():
+            nr.add_child(UIKit.tag(str(GameManager.STORAGE[kind]["name"]).to_lower(),
+                UIKit.ACCENT_900, Color(0.31, 0.36, 0.54, 0.12)))
 
-        # kho lạnh đầy thì cái nút cũng thôi mời gọi, khỏi bấm cho mất công
+        # Mỗi món một trần riêng do kho của nó quyết định.
+        var cap := float(GameManager.item_capacity(str(id)))
+        var full := cap > 0.0 and qty >= cap
+        var low := cap > 0.0 and qty <= cap * 0.15
+        var stock_col := UIKit.BAD if low else UIKit.N700
+        info.add_child(UIKit.label("Còn %d/%d %s · lố %d · %s ₫/%s" % [
+            int(qty), int(cap), str(d["unit"]), pack,
+            UIKit.money(float(d["price"])), str(d["unit"])], 11, stock_col))
+        var bar_col: Color = UIKit.BAD if low else (UIKit.WARN if full else UIKit.ACCENT)
+        info.add_child(UIKit.bar(clampf(qty / maxf(cap, 1.0) * 100.0, 0.0, 100.0), bar_col, 5))
+        if full:
+            info.add_child(UIKit.muted("%s đầy — kê thêm %s mới nhập được nữa" % [
+                str(GameManager.STORAGE[kind]["name"]),
+                str(GameManager.STORAGE[kind]["unit_name"]).to_lower()], 11))
+
+        # kho đầy thì cái nút cũng thôi mời gọi, khỏi bấm cho mất công
         if full:
             var stop := UIKit.button_secondary("KHO ĐẦY", 13)
             stop.custom_minimum_size = Vector2(150, 75)
@@ -265,31 +285,28 @@ func _build_ingredients() -> void:
         buy.pressed.connect(func():
             if GameManager.buy_ingredient(id):
                 _toast("Đã nhập %s vào kho" % str(d["name"]).to_lower())
-            elif GameManager.is_cold(id) and GameManager.stock_room(id) <= 0.0:
-                _toast("Kho lạnh đầy rồi — kê thêm tủ đi")
+            elif GameManager.stock_room(str(id)) <= 0.0:
+                _toast("Kho đầy rồi — kê thêm chỗ trữ đi")
             else:
                 _toast("Không đủ tiền"))
         h.add_child(buy)
         list_box.add_child(card)
 
 
-## Kho lạnh: tủ lạnh mua riêng cho từng khu, nâng cấp cũng riêng từng khu —
-## nhưng chỗ trữ thì góp chung vào một cái kho của quán, vì kho nguyên liệu xưa
-## giờ vẫn dùng chung.
-func _build_cold() -> void:
+## Một tab kho — dùng chung cho tủ lạnh và kệ đồ khô, hai thứ chạy y hệt nhau:
+## mỗi khu tự mua của khu mình, nâng cấp riêng, nhưng chỗ trữ thì góp chung vào
+## một cái kho của quán, vì kho nguyên liệu xưa giờ vẫn dùng chung.
+func _build_store(kind: String) -> void:
+    var st: Dictionary = GameManager.STORAGE[kind]
     var fname := str(GameManager.floor_data(shop_floor)["name"])
-    list_box.add_child(UIKit.section("Tủ lạnh " + fname.to_lower() + " — chỗ trữ đồ tươi"))
+    var unit_name := str(st["unit_name"])
+    list_box.add_child(UIKit.section(unit_name + " " + fname.to_lower() + " — chỗ trữ hàng"))
+    list_box.add_child(UIKit.muted(str(st["desc"]), 12))
 
-    var names: Array = []
-    for cid in GameManager.COLD_ITEMS:
-        names.append(str(GameManager.INGREDIENTS[cid]["name"]).to_lower())
-    list_box.add_child(UIKit.muted("Trữ lạnh: " + ", ".join(names)
-        + " · cả quán %d mỗi món" % GameManager.cold_capacity(), 12))
+    var have := GameManager.store_count(kind, shop_floor)
+    var lv := GameManager.store_level(kind, shop_floor)
 
-    var have := GameManager.fridge_count(shop_floor)
-    var lv := GameManager.fridge_level(shop_floor)
-
-    # ---- thẻ 1: kê thêm một cái tủ nữa cho khu này
+    # ---- thẻ 1: kê thêm một cái nữa cho khu này
     var card := UIKit.card(11)
     var h := HBoxContainer.new()
     h.add_theme_constant_override("separation", 10)
@@ -301,31 +318,31 @@ func _build_cold() -> void:
     var nr := HBoxContainer.new()
     nr.add_theme_constant_override("separation", 6)
     info.add_child(nr)
-    nr.add_child(UIKit.label("Tủ lạnh", 15, UIKit.ACCENT_900))
+    nr.add_child(UIKit.label(unit_name, 15, UIKit.ACCENT_900))
     if have > 0:
-        nr.add_child(UIKit.tag("khu này %d/%d" % [have, GameManager.FRIDGE_MAX],
+        nr.add_child(UIKit.tag("khu này %d/%d" % [have, GameManager.store_max(kind)],
             UIKit.OK, Color(0.31, 0.54, 0.36, 0.14)))
-    info.add_child(UIKit.muted("Mỗi cái trữ thêm %d mỗi món tươi (cấp %d)" % [
-        GameManager.FRIDGE_SLOT + (lv - 1) * GameManager.FRIDGE_SLOT_STEP, lv], 11))
-    if GameManager.fridge_at_max(shop_floor):
-        var full := UIKit.button_secondary("HẾT CHỖ KÊ", 13)
-        full.custom_minimum_size = Vector2(156, 75)
-        full.disabled = true
-        h.add_child(full)
+    info.add_child(UIKit.muted("Mỗi cái cấp %d trữ thêm: %s" % [
+        lv, _slot_line(kind, lv)], 11))
+    if GameManager.store_at_max(kind, shop_floor):
+        var no_room := UIKit.button_secondary("HẾT CHỖ KÊ", 13)
+        no_room.custom_minimum_size = Vector2(156, 75)
+        no_room.disabled = true
+        h.add_child(no_room)
     else:
-        var cost := GameManager.fridge_cost(shop_floor)
+        var cost := GameManager.store_cost(kind, shop_floor)
         var buy := UIKit.button_primary(UIKit.money_short(cost) + " ₫", 13)
         buy.custom_minimum_size = Vector2(156, 75)
         buy.set_meta("cost", cost)
         buy.pressed.connect(func():
-            if GameManager.buy_fridge(shop_floor):
-                _toast("Đã kê thêm tủ lạnh cho " + fname.to_lower())
+            if GameManager.buy_store(kind, shop_floor):
+                _toast("Đã kê thêm %s cho %s" % [unit_name.to_lower(), fname.to_lower()])
             else:
                 _toast("Không đủ tiền"))
         h.add_child(buy)
     list_box.add_child(card)
 
-    # ---- thẻ 2: nâng cấp tủ của khu này, mọi cái tủ cùng rộng ra một nấc
+    # ---- thẻ 2: nâng cấp, mọi cái của khu này cùng rộng ra một nấc
     var card2 := UIKit.card(11)
     var h2 := HBoxContainer.new()
     h2.add_theme_constant_override("separation", 10)
@@ -337,50 +354,67 @@ func _build_cold() -> void:
     var nr2 := HBoxContainer.new()
     nr2.add_theme_constant_override("separation", 6)
     info2.add_child(nr2)
-    nr2.add_child(UIKit.label("Nâng cấp tủ lạnh", 15, UIKit.ACCENT_900))
-    nr2.add_child(UIKit.tag("C%d" % lv, UIKit.ACCENT_900, Color(0.31, 0.36, 0.54, 0.12)))
-    info2.add_child(UIKit.muted("Khu này góp %d chỗ mỗi món · lên cấp thì mỗi tủ rộng thêm %d" % [
-        GameManager.fridge_floor_capacity(shop_floor), GameManager.FRIDGE_SLOT_STEP], 11))
+    nr2.add_child(UIKit.label("Nâng cấp " + unit_name.to_lower(), 15, UIKit.ACCENT_900))
+    nr2.add_child(UIKit.tag("C%d/%d" % [lv, GameManager.MAX_LEVEL],
+        UIKit.ACCENT_900, Color(0.31, 0.36, 0.54, 0.12)))
+    if lv < GameManager.MAX_LEVEL:
+        info2.add_child(UIKit.muted("Lên cấp %d thì mỗi cái trữ thêm: %s" % [
+            lv + 1, _slot_line(kind, lv + 1)], 11))
+    else:
+        info2.add_child(UIKit.muted("Đã kịch cấp", 11))
     if have <= 0:
-        var none := UIKit.button_secondary("CHƯA CÓ TỦ", 13)
+        var none := UIKit.button_secondary("CHƯA CÓ CÁI NÀO", 13)
         none.custom_minimum_size = Vector2(156, 75)
         none.disabled = true
         h2.add_child(none)
-    elif GameManager.fridge_level_at_max(shop_floor):
+    elif GameManager.store_level_at_max(kind, shop_floor):
         var maxed := UIKit.button_secondary("ĐÃ TỐI ĐA", 13)
         maxed.custom_minimum_size = Vector2(156, 75)
         maxed.disabled = true
         h2.add_child(maxed)
     else:
-        var ucost := GameManager.fridge_upgrade_cost(shop_floor)
+        var ucost := GameManager.store_upgrade_cost(kind, shop_floor)
         var up := UIKit.button_secondary(UIKit.money_short(ucost) + " ₫", 13)
         up.custom_minimum_size = Vector2(156, 75)
         up.set_meta("cost", ucost)
         up.pressed.connect(func():
-            if GameManager.upgrade_fridge(shop_floor):
-                _toast("Tủ lạnh %s lên cấp %d" % [fname.to_lower(),
-                    GameManager.fridge_level(shop_floor)])
+            if GameManager.upgrade_store(kind, shop_floor):
+                _toast("%s %s lên cấp %d" % [unit_name, fname.to_lower(),
+                    GameManager.store_level(kind, shop_floor)])
             else:
                 _toast("Không đủ tiền"))
         h2.add_child(up)
     list_box.add_child(card2)
 
-    # ---- kho lạnh đang chứa gì
+    # ---- kho này đang chứa gì, mỗi món một trần riêng
     list_box.add_child(UIKit.spacer(6))
-    list_box.add_child(UIKit.section("Đồ tươi đang trữ"))
-    for cid in GameManager.COLD_ITEMS:
+    list_box.add_child(UIKit.section("Cả quán đang trữ"))
+    for cid in st["items"]:
         var ing: Dictionary = GameManager.INGREDIENTS[cid]
         var qty := float(GameManager.stock.get(cid, 0.0))
-        var cap := float(GameManager.cold_capacity())
+        var cap := float(GameManager.item_capacity(str(cid)))
         var row := UIKit.card(9)
         var rv := VBoxContainer.new()
         rv.add_theme_constant_override("separation", 3)
         row.add_child(rv)
         rv.add_child(UIKit.label("%s — %d/%d %s" % [
             str(ing["name"]), int(qty), int(cap), str(ing["unit"])], 13, UIKit.ACCENT_900))
-        rv.add_child(UIKit.bar(clampf(qty / cap * 100.0, 0.0, 100.0),
+        rv.add_child(UIKit.bar(clampf(qty / maxf(cap, 1.0) * 100.0, 0.0, 100.0),
             UIKit.WARN if qty >= cap else UIKit.ACCENT, 5))
+        # khu này góp bao nhiêu vào cái trần đó
+        rv.add_child(UIKit.muted("có sẵn %d · %s góp %d" % [
+            GameManager.store_cap_base(kind, str(cid)), fname.to_lower(),
+            GameManager.store_floor_capacity(kind, shop_floor, str(cid))], 11))
         list_box.add_child(row)
+
+
+## Một cái tủ/kệ cấp `lv` trữ thêm được gì — viết gọn thành một dòng.
+func _slot_line(kind: String, lv: int) -> String:
+    var parts: Array = []
+    for cid in GameManager.STORAGE[kind]["items"]:
+        parts.append("%d %s" % [GameManager.store_slot(kind, str(cid), lv),
+            str(GameManager.INGREDIENTS[cid]["unit"])])
+    return " · ".join(parts)
 
 
 ## Còn món nào chưa đầy kho không — để cái toast nói cho đúng chuyện.

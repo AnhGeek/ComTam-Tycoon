@@ -29,10 +29,15 @@
 		"  pack = 0 là bán thành phẩm tự làm, không mua ngoài chợ được.",
 		"floors.cost: giá mở khu — trả một lần, không có cấp.",
 		"grill: lò than vỉa hè. warmer: lò giữ nhiệt trong quầy.",
-		"fridge: tủ lạnh — mỗi khu tự mua tủ của khu mình (cost · cost_mult · max) rồi",
-		"  nâng cấp riêng (up_costs). cap_base = chỗ trữ đồ tươi khi chưa có tủ nào,",
-		"  slot = chỗ một cái tủ cấp 1 thêm vào, slot_step = mỗi cấp rộng thêm bao nhiêu.",
-		"chung: mấy con số dùng chung cho cả game (max_level = số cấp tối đa)."
+		"KHO: quán có hai kho, mỗi khu tự mua tủ/kệ của khu mình rồi nâng cấp riêng,",
+		"  nhưng chỗ trữ thì góp chung. fridge = kho lạnh (sườn · bì · chả · đá bi),",
+		"  pantry = kho đồ khô (gạo · trà · than · gas). Trong mỗi mục:",
+		"    cap_base.<món>   = trữ được chừng này khi chưa mua cái nào",
+		"    slot.<món>[k-1]  = một cái tủ/kệ CẤP k trữ thêm chừng đó cho món đó",
+		"    tổng = cap_base + cộng dồn mọi tủ/kệ của mọi khu",
+		"  Hai mảng đó có đúng 25 số nên chỉnh được từng mức chứa của từng món ở",
+		"  từng cấp. cost/cost_mult/max = giá và số tủ tối đa mỗi khu; up_costs = giá",
+		"  từng cấp nâng."
 	],
 	"stations": {
 		"grill": {
@@ -87,8 +92,8 @@
 			"keep_step": 8,
 			"up_cost": 90000,
 			"recipe": {
-				"rice": 1,
-				"gas": 1
+				"rice": 0.5,
+				"gas": 0.01
 			},
 			"up_costs": [
 				0,
@@ -295,54 +300,54 @@
 			"name": "Gạo tấm",
 			"unit": "kg",
 			"price": 8000,
-			"pack": 50
+			"pack": 10
 		},
 		"pork": {
 			"name": "Sườn heo",
 			"unit": "miếng",
 			"price": 15000,
-			"pack": 50
+			"pack": 10
 		},
 		"bi": {
 			"name": "Bì heo",
 			"unit": "phần",
 			"price": 6000,
-			"pack": 50
+			"pack": 10
 		},
 		"cha": {
 			"name": "Chả trứng",
 			"unit": "miếng",
 			"price": 10000,
-			"pack": 50
+			"pack": 10
 		},
 		"tea": {
 			"name": "Trà",
 			"unit": "ấm",
 			"price": 800,
-			"pack": 100
+			"pack": 5
 		},
 		"ice": {
 			"name": "Đá bi lạnh",
 			"unit": "ly",
 			"price": 700,
-			"pack": 100
+			"pack": 10
 		},
 		"coal": {
 			"name": "Than đá",
-			"unit": "bao",
-			"price": 24000,
-			"pack": 20
+			"unit": "kg",
+			"price": 12000,
+			"pack": 10
 		},
 		"gas": {
 			"name": "Gas",
-			"unit": "suất",
-			"price": 2000,
-			"pack": 100
+			"unit": "bình",
+			"price": 250000,
+			"pack": 1
 		},
 		"com": {
 			"name": "Phần cơm tấm",
 			"unit": "phần",
-			"price": 10000,
+			"price": 6500,
 			"pack": 0
 		},
 		"bicha": {
@@ -360,7 +365,7 @@
 		"grilled": {
 			"name": "Sườn nướng sẵn",
 			"unit": "miếng",
-			"price": 17000,
+			"price": 16200,
 			"pack": 0
 		}
 	},
@@ -444,13 +449,11 @@
 		]
 	},
 	"fridge": {
-		"cap_base": 220,
-		"slot": 180,
-		"slot_step": 70,
-		"cost": 600000.0,
+		"_ghi_chu": "cap_base = trữ được chừng này khi CHƯA có tủ nào. slot.<món>[k-1] = một cái tủ CẤP k trữ thêm chừng đó. Tổng = cap_base + cộng dồn mọi tủ của mọi khu.",
+		"cost": 600000,
 		"cost_mult": 1.7,
 		"max": 3,
-		"up_cost": 180000.0,
+		"up_cost": 180000,
 		"up_mult": 1.55,
 		"up_costs": [
 			0,
@@ -478,7 +481,129 @@
 			1787000000,
 			2771000000,
 			4294000000
-		]
+		],
+		"items": [
+			"pork",
+			"bi",
+			"cha",
+			"ice"
+		],
+		"cap_base": {
+			"pork": 50,
+			"bi": 50,
+			"cha": 50,
+			"ice": 50
+		},
+		"slot": {
+			"pork": [
+				30,
+				40,
+				50,
+				65,
+				80,
+				100,
+				130,
+				170,
+				220,
+				280,
+				350,
+				450,
+				580,
+				740,
+				950,
+				1200,
+				1600,
+				2000,
+				2600,
+				3300,
+				4200,
+				5400,
+				6900,
+				8800,
+				11200
+			],
+			"bi": [
+				30,
+				40,
+				50,
+				65,
+				80,
+				100,
+				130,
+				170,
+				220,
+				280,
+				350,
+				450,
+				580,
+				740,
+				950,
+				1200,
+				1600,
+				2000,
+				2600,
+				3300,
+				4200,
+				5400,
+				6900,
+				8800,
+				11200
+			],
+			"cha": [
+				30,
+				40,
+				50,
+				65,
+				80,
+				100,
+				130,
+				170,
+				220,
+				280,
+				350,
+				450,
+				580,
+				740,
+				950,
+				1200,
+				1600,
+				2000,
+				2600,
+				3300,
+				4200,
+				5400,
+				6900,
+				8800,
+				11200
+			],
+			"ice": [
+				30,
+				40,
+				50,
+				65,
+				80,
+				100,
+				130,
+				170,
+				220,
+				280,
+				350,
+				450,
+				580,
+				740,
+				950,
+				1200,
+				1600,
+				2000,
+				2600,
+				3300,
+				4200,
+				5400,
+				6900,
+				8800,
+				11200
+			]
+		}
 	},
 	"staff": {
 		"waiter": {
@@ -602,7 +727,163 @@
 		"level_batch_every": 4,
 		"offline_max_seconds": 14400.0,
 		"offline_rate": 0.5,
-		"dry_stock_target": 200,
 		"max_level": 25
+	},
+	"pantry": {
+		"_ghi_chu": "Kho đồ khô, cách tính y hệt kho lạnh. Gas đo theo BÌNH: một bình nấu 100 suất cơm (nồi cơm ăn 0.01 bình mỗi phần).",
+		"cost": 400000,
+		"cost_mult": 1.7,
+		"max": 3,
+		"up_cost": 140000,
+		"up_mult": 1.55,
+		"up_costs": [
+			0,
+			140000,
+			217000,
+			336400,
+			521300,
+			808100,
+			1252500,
+			1941400,
+			3009200,
+			4664200,
+			7229600,
+			11205900,
+			17369100,
+			26922100,
+			41729200,
+			64680300,
+			100254400,
+			155394300,
+			240861200,
+			373334900,
+			578669100,
+			896937100,
+			1390252500,
+			2154891400,
+			3340081700
+		],
+		"items": [
+			"rice",
+			"tea",
+			"coal",
+			"gas"
+		],
+		"cap_base": {
+			"rice": 50,
+			"tea": 20,
+			"coal": 20,
+			"gas": 1
+		},
+		"slot": {
+			"rice": [
+				30,
+				40,
+				50,
+				65,
+				80,
+				100,
+				130,
+				170,
+				220,
+				280,
+				350,
+				450,
+				580,
+				740,
+				950,
+				1200,
+				1600,
+				2000,
+				2600,
+				3300,
+				4200,
+				5400,
+				6900,
+				8800,
+				11200
+			],
+			"tea": [
+				10,
+				15,
+				20,
+				25,
+				30,
+				40,
+				55,
+				70,
+				85,
+				110,
+				140,
+				180,
+				230,
+				300,
+				380,
+				490,
+				620,
+				800,
+				1000,
+				1300,
+				1700,
+				2100,
+				2700,
+				3500,
+				4500
+			],
+			"coal": [
+				10,
+				15,
+				20,
+				25,
+				30,
+				40,
+				55,
+				70,
+				85,
+				110,
+				140,
+				180,
+				230,
+				300,
+				380,
+				490,
+				620,
+				800,
+				1000,
+				1300,
+				1700,
+				2100,
+				2700,
+				3500,
+				4500
+			],
+			"gas": [
+				1,
+				1,
+				2,
+				2,
+				3,
+				3,
+				4,
+				6,
+				7,
+				9,
+				10,
+				15,
+				20,
+				25,
+				30,
+				40,
+				50,
+				65,
+				85,
+				110,
+				140,
+				180,
+				230,
+				290,
+				370
+			]
+		}
 	}
 }

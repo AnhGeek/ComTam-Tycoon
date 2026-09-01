@@ -27,7 +27,8 @@ chắc chắn không có lỗi runtime trong vòng đời của khách.
 
 Mọi con số cân bằng nằm ở đây, sửa xong chạy `./install.sh` là ra APK mới, **không
 phải đụng vào code**: giá bán từng món trong menu, giá nâng cấp từng quầy, công thức nguyên liệu,
-giá nguyên liệu, giá mở khu, lò than, lò giữ nhiệt, lương nhân viên, giá trang
+giá nguyên liệu, sức chứa từng món của hai cái kho, giá mở khu, lò than, lò giữ
+nhiệt, lương nhân viên, giá trang
 trí/bàn ghế, thưởng nhiệm vụ, và mấy hệ số chung (tiền vốn, độ dài một ngày, độ
 kiên nhẫn của khách, hệ số nâng cấp mỗi cấp).
 
@@ -38,10 +39,15 @@ nút trong game đổi thành "ĐÃ TỐI ĐA". `up_cost` và `chung.station_up_
 là đường lui khi mảng thiếu số. Giá mở khu (`floors.<id>.cost`) là khoản trả một
 lần, không dính gì tới cấp.
 
+**Công thức ghi số lẻ được:** `recipe` của quầy nhận số thập phân (nồi cơm ăn
+`0.5` kg gạo và `0.01` bình gas mỗi phần). Kho thì **luôn là số nguyên**, nên chỗ
+lẻ được cộng dồn trong `ing_debt` — đủ một đơn vị mới rút một đơn vị ra khỏi kho.
+Phần lẻ còn nợ có lưu vào save, không thì tải lại game là được ăn không.
+
 **Nhập nhanh:** nút "NHẬP NHANH CHO ĐẦY KHO" (`buy_all_low()`) nhập xoay vòng mỗi
 lượt một lố, món cạn nhất đi trước, cho tới khi đầy hoặc hết tiền — món nào đã đầy
-thì bỏ qua chứ không chặn mấy món còn thiếu. Mốc đầy là `stock_target()`: đồ tươi
-lấy theo `cold_capacity()`, đồ khô lấy `chung.dry_stock_target`.
+thì bỏ qua chứ không chặn mấy món còn thiếu. Mốc đầy là `stock_target()`, chính là
+`item_capacity()` — trần riêng của từng món do kho của nó quyết định.
 
 `GameManager._load_balance()` đọc file này lúc khởi động rồi **ghi đè** lên số mặc
 định khai báo trong `scripts/game_manager.gd`. Thiếu khoá nào thì khoá đó giữ số
@@ -84,11 +90,38 @@ Vòng tiền, đúng theo thứ tự này:
 Không còn chỗ nào bán theo phần lẻ: mọi nguyên liệu, mọi suất, mọi khoản tiền
 đều là số nguyên (`_spend` cũng làm tròn).
 
-**Bốn quầy là bếp chung của cả quán**: `stations_on_floor()` trả về đủ bốn quầy
-cho mọi khu đã mở, nhưng `tycoon_world` chỉ **dựng thật một dãy quầy và người
-đứng bếp ở khu vỉa hè** (`index == 0`); khu trên chỉ có mặt quầy trống cho người
-bưng đứng lấy đĩa. Khu bây giờ chỉ còn là chỗ ngồi và là nơi quyết định khách gọi
-món gì.
+### Mỗi khu một dãy quầy riêng
+
+**Kho thì chung, quầy thì riêng.** Kho nguyên liệu và kho bán thành phẩm
+(`com`/`bicha`/`trada`/`grilled`) dùng chung cả quán, nhưng **cấp quầy, tiến độ mẻ
+và quản lý là của riêng từng khu**: nâng nồi cơm khu máy lạnh không làm nồi cơm
+vỉa hè chạy nhanh hơn, và khu nào cũng dựng đủ dãy quầy lẫn người đứng bếp của
+mình. Riêng **lò than vỉa hè** (`_build_griller`) vẫn độc nhất một cái ngoài hiên
+khu trệt, nên ở khu trên quầy `grill` (lò giữ nhiệt) có người đứng như quầy thường.
+
+Cách ghi: mọi thứ tính theo quầy — `levels` · `progress` · `managers` · `pending` ·
+`pending_portions` — dùng **khoá ghép `"<quầy>@<khu>"`**, ví dụ `"rice@aircon"`.
+
+| Muốn gì | Gọi hàm |
+|---|---|
+| Khoá ghép của quầy `sid` ở khu `fid` | `station_key(sid, fid)` |
+| Tên quầy (bỏ phần khu) | `station_base(id)` |
+| Quầy đó đứng khu nào | `station_floor(id)` |
+| Bảng số của quầy (cycle, batch, recipe…) | `station_def(id)` |
+| Dãy quầy của một khu | `stations_on_floor(fid)` |
+| Cả 4×3 cái quầy của quán | `all_station_ids()` |
+
+`STATIONS[id]` chỉ còn là **bảng số theo tên quầy**, khoá `"floor"` trong đó là
+tàn dư (ghi `"street"` cho cả bốn) — đừng bao giờ hỏi nó xem quầy nằm khu nào, hỏi
+`station_floor()`. `station_level()` tự trả về 1 cho quầy của khu đã mở mà chưa
+ghi cấp, nên mở khu (kể cả mở tắt trong code gỡ lỗi) là có ngay bốn quầy cấp 1.
+Save đời cũ ghi khoá trần `"rice"` thì lúc load dồn về khu vỉa hè, mấy khu trên
+bắt đầu lại từ cấp 1.
+
+Bên `tycoon_world`, `_station_nodes` cũng khoá bằng khoá ghép nên quầy cùng tên ở
+ba khu là ba mục riêng; chỗ nào cần **hình dạng** quầy (`match base:`, icon, dao
+thớt) thì phải `station_base()` trước, chỗ nào hỏi cấp/nguyên liệu thì đưa thẳng
+khoá ghép cho GameManager.
 
 Bong bóng tiền trên quầy (`pending`, `collect()`, nút "THU … ₫") **không còn được
 rót vào nữa** vì tiền chảy thẳng vô ví. Bộ khung vẫn nằm đó, quản lý quầy giờ chỉ
@@ -260,25 +293,54 @@ của preset — mặc váy thì ống chân đổi sang màu da.
 Save đời cũ ghi `staff` phẳng thì lúc load dồn hết về khu đầu, y như cách trang
 trí đã làm.
 
-### Kho lạnh (tủ lạnh)
+### Hai cái kho: kho lạnh và kho đồ khô
 
-Bốn món tươi trong `COLD_ITEMS` (sườn, trứng, bì, chả) **có trần kho**, mấy thứ
-khô (gạo, than, gas...) thì không. Trần đó là `cold_capacity()` =
-`FRIDGE_CAP_BASE` cộng phần góp của mọi khu, mỗi khu góp
-`số tủ × (FRIDGE_SLOT + (cấp − 1) × FRIDGE_SLOT_STEP)`.
+Mỗi nguyên liệu mua ngoài chợ đều thuộc về **một cái kho**, và cái kho đó chặn
+trần số lượng trữ được:
 
-Tủ lạnh theo đúng luật "mỗi khu lo phần khu mình": `fridges[fid]` là số tủ,
-`fridge_levels[fid]` là cấp của khu đó, mua bằng `buy_fridge(fid)` (cái sau đắt
-hơn cái trước theo `FRIDGE_COST_MULT`, nhiều nhất `FRIDGE_MAX` cái một khu) và
-nâng bằng `upgrade_fridge(fid)` (25 cấp, giá từng cấp ở `fridge.up_costs` trong
-`balance.json`). Nhưng **chỗ trữ thì góp chung**, vì kho nguyên liệu xưa giờ vẫn
-là kho chung của cả quán.
+| Kho | Khoá | Món | Vật mua |
+|---|---|---|---|
+| Kho lạnh | `fridge` | sườn heo · bì · chả · **đá bi** | Tủ lạnh |
+| Kho đồ khô | `pantry` | gạo · trà · than · gas | Kệ đồ khô |
 
-`buy_ingredient()` tự cắt bớt số lượng cho vừa chỗ còn trống và chỉ tính tiền
-phần nhét vô được; kho đầy thì trả `false`. Vách trái mỗi khu bày được **hai**
-cái tủ (`_build_fridges`), cái thứ ba mua rồi vẫn tính chỗ trữ nhưng không dựng
-ra cho đỡ chật. Tab **Kho lạnh** trong Mua sắm dùng chung nút chọn khu với hai
-tab kia.
+Hai kho chạy **y hệt nhau**: mỗi khu tự mua tủ/kệ của khu mình (tối đa `max` cái)
+rồi nâng cấp riêng, nhưng **chỗ trữ thì góp chung** vào một cái kho của cả quán —
+vì kho nguyên liệu xưa giờ vẫn dùng chung.
+
+Sức chứa tính riêng **cho từng món**:
+
+```
+item_capacity(món) = cap_base[món]
+                   + Σ (mọi tủ/kệ của mọi khu) slot[món][cấp cái đó]
+```
+
+Cả `cap_base` lẫn `slot` nằm trong `data/balance.json`, mỗi món một mảng
+`MAX_LEVEL` số, nên **chỉnh được từng mức chứa của từng món ở từng cấp**. Bảng
+thiếu số thì code suy ra theo công thức nhân dần (`store_slot`), không đứng im.
+
+Mốc cấp 1 (chưa mua cái nào): sườn/bì/chả/đá bi 50 mỗi món · gạo 50 kg · trà 20
+ấm · than 20 kg · **gas 1 bình**. Một bình gas nấu đúng **100 suất cơm** — nồi cơm
+ăn `0.01` bình mỗi phần, chỗ lẻ được cộng dồn (xem `_use_ingredient`), nên kho đầy
+cấp 1 vừa đủ 100 phần cơm cả gạo lẫn gas.
+
+Trong `GameManager` mọi thứ đi qua bảng `STORAGE` và mấy hàm `store_*`:
+`store_count/store_level/store_slot/store_cap_base` · `store_cost/store_upgrade_cost`
+· `buy_store(kind, fid)` / `upgrade_store(kind, fid)` · `item_capacity(id)` ·
+`storage_of(id)` · `is_stored(id)` · `is_cold(id)`. Trạng thái nằm ở
+`stores[kind][fid]` và `store_levels[kind][fid]`. `fridge_count/fridge_level/
+buy_fridge/upgrade_fridge` chỉ còn là mấy cái tên cũ gọi vòng qua kho `"fridge"`
+(cảnh 3D `_build_fridges` dùng tới). Kệ đồ khô **chưa có mô hình 3D**, mới chỉ có
+trong màn Mua sắm.
+
+`buy_ingredient()` tự cắt bớt số lượng cho vừa chỗ còn trống của món đó và chỉ
+tính tiền phần nhét vô được; kho đầy thì trả `false`. `stock_target()` giờ chính
+là `item_capacity()`, nên "NHẬP NHANH CHO ĐẦY KHO" nhập tới đúng trần từng món.
+
+Màn Mua sắm có **năm tab**: Nguyên liệu · Nhân viên · Trang trí · **Kho lạnh** ·
+**Kho khô**. Hai tab kho dùng chung một hàm dựng `_build_store(kind)` và dùng
+chung hàng nút chọn khu với tab Nhân viên/Trang trí; `store_kind_of(tab)` cho
+biết tab nào là kho nào. Tab Nguyên liệu không có nút chọn khu vì kho dùng chung,
+mỗi thẻ nguyên liệu có nhãn nhỏ ghi nó nằm kho nào.
 
 ### `tycoon_world.gd` — vài quy ước
 

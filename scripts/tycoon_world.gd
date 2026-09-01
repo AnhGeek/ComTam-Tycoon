@@ -181,9 +181,16 @@ var _furni_by_index: Dictionary = {}   # chỉ số trong GameManager.placed -> 
 var _blockers: Dictionary = {}         # tầng -> [{pos, r}] chỗ không kê bàn được
 
 # ---------- Vật cản đặc: người không đi xuyên qua ----------
-## Bán kính thân người lúc né đồ đạc. Người đã thu nhỏ (CHAR_SCALE) nên vai chỉ
-## rộng chừng này; để rộng hơn thì họ đi vòng quá xa, trông như sợ cái bàn.
+## Khoảng chừa quanh người lúc lái tránh đồ đạc — coi như nửa bề ngang thân. Người
+## đã thu nhỏ (CHAR_SCALE) nên vai chỉ rộng chừng này; để rộng hơn thì họ đi vòng
+## quá xa, trông như sợ cái bàn. Đây CHỈ là số để lái, không phải va chạm cứng.
 const BODY_R := 0.24
+## Lối đi hẹp hơn chừng này thì bịt luôn (xem `_seal_solids`). Thân người rộng
+## 0.48, nên 0.78 là chừa mỗi bên một tấc rưỡi — vừa đủ để đi lọt mà trông vẫn
+## tự nhiên. Để sát nút (0.58) thì sinh ra mấy cái khe nửa vời: lọt thì có lọt,
+## nhưng người cứ lấn cấn ở cửa khe, nhìn y như kẹt — khe giữa đầu tường trái với
+## xe lò than và khe giữa hai cái tủ lạnh đều đúng kiểu đó.
+const WALK_W := 0.78
 ## Khu -> [{c: tâm, h: nửa chiều}] mọi khối đặc trong khu đó, tính theo mặt bằng
 ## (bỏ qua cao độ: bàn, quầy, lò, tường — thứ nào người cũng phải đi vòng).
 var _solids: Dictionary = {}
@@ -460,6 +467,60 @@ func _solid(index: int, x: float, z: float, hx: float, hz: float) -> void:
     (_solids[index] as Array).append({"c": Vector2(x, z), "h": Vector2(hx, hz)})
 
 
+## Bịt mấy cái KHE CHẾT trong khu: hai thứ kê gần nhau chừa ra một kẽ hẹp hơn bề
+## ngang người thì ai lỡ lọt vào đó là nằm luôn trong ấy, không cách nào lách ra.
+## Góc phải quầy là chỗ dính nhiều nhất: hồ cá cách mặt quầy hai tấc bảy, chậu
+## cây cách hồ cá một tấc hai, cả hai lại cách mép phải quán hơn hai tấc.
+##
+## Cách chữa: nới cái NHỎ hơn cho dính hẳn vào cái lớn, coi hai thứ là một khối
+## liền — người đi vòng ngoài chứ không ai chui vào kẽ nữa. Chạy hai lượt để thứ
+## vừa nới xong còn bịt tiếp được kẽ giữa nó với thứ thứ ba (quầy → hồ cá → chậu
+## cây → mép quán là đúng một dây bốn thứ như vậy).
+##
+## Nới rồi thì bàn ghế người chơi kê sát tường cũng liền luôn vào tường, nên
+## không cần đi bịt tay từng chỗ mỗi lần thêm đồ mới.
+func _seal_solids(index: int) -> void:
+    var list: Array = _solids.get(index, [])
+    for _pass in 2:
+        for a in list:
+            var sa: Dictionary = a
+            for b in list:
+                var sb: Dictionary = b
+                if sa == sb:
+                    continue
+                var ha: Vector2 = sa["h"]
+                var hb: Vector2 = sb["h"]
+                # chỉ cái nhỏ mới bị nới; nới cái quầy hay bức tường thì nó phình
+                # ra nuốt luôn nửa gian nhà
+                if ha.x * ha.y > hb.x * hb.y:
+                    continue
+                var ca: Vector2 = sa["c"]
+                var d: Vector2 = (sb["c"] as Vector2) - ca
+                for axis in 2:
+                    var ax: float = d.x if axis == 0 else d.y
+                    var ov: float = d.y if axis == 0 else d.x
+                    var ha_ax: float = ha.x if axis == 0 else ha.y
+                    var hb_ax: float = hb.x if axis == 0 else hb.y
+                    var ha_ov: float = ha.y if axis == 0 else ha.x
+                    var hb_ov: float = hb.y if axis == 0 else hb.x
+                    # hai cái phải nhìn thẳng vào mặt nhau theo trục kia mới là khe
+                    if absf(ov) >= ha_ov + hb_ov:
+                        continue
+                    var gap := absf(ax) - ha_ax - hb_ax
+                    if gap <= 0.0 or gap >= WALK_W:
+                        continue
+                    var grow := gap * 0.5
+                    var dir := 1.0 if ax >= 0.0 else -1.0
+                    if axis == 0:
+                        ha.x += grow
+                        ca.x += grow * dir
+                    else:
+                        ha.y += grow
+                        ca.y += grow * dir
+                    sa["h"] = ha
+                    sa["c"] = ca
+
+
 func _build_floor(node: Node3D, fid: String, index: int) -> void:
     var hw := ROOM_W * 0.5
     var hd := ROOM_D * 0.5
@@ -500,6 +561,10 @@ func _build_floor(node: Node3D, fid: String, index: int) -> void:
     # cũng không lọt qua kẽ tường trong một khung hình.
     _solid(index, 0, -hd - 0.4, hw + 0.4, 0.5)
     _solid(index, -hw - 0.4, 0, 0.5, hd)
+    # Mép phải không có tường thật (để trống cho thấy lòng quán), nhưng bước qua
+    # đó là hụt chân xuống khoảng trống giữa hai khu — chặn lại y như tường. Chỉ
+    # chặn trong lòng quán thôi, vỉa hè phía trước vẫn đi lại thoải mái.
+    _solid(index, hw + 0.4, 0, 0.5, hd)
 
     # quầy bếp dọc tường sau
     _box(node, ROOM_W - 0.5, 0.95, 1.0, C_WOOD, 0, 0.48, -hd + 1.15)
@@ -515,18 +580,19 @@ func _build_floor(node: Node3D, fid: String, index: int) -> void:
         _solid(index, -hw - 0.75, hd + 1.7, 0.24, 0.24)          # cột bảng hiệu
     _solid(index, hw - 0.05, hd + 0.95, 0.38, 0.38)              # lu nước đầu hè
 
-    # Quầy hàng. Bốn cái quầy là bếp CHUNG của cả quán nên chỉ dựng thật một dãy
-    # ngoài vỉa hè; mấy khu trên chỉ có mặt quầy trống để người bưng đứng lấy đĩa.
-    if index == 0:
-        var sids := GameManager.stations_on_floor(fid)
-        for i in sids.size():
-            _build_station(node, str(sids[i]), _station_slot(i, sids.size()), index)
+    # Quầy hàng. Bốn cái quầy là bếp CHUNG của cả quán (chung kho, chung tiến độ),
+    # nhưng khu nào cũng phải có dãy quầy của mình — không thì mặt quầy trống trơn
+    # mà người bưng thì đứng lấy đĩa giữa không khí. Nên dựng đủ ở mọi khu, chỉ có
+    # lò than vỉa hè là độc nhất một cái ngoài hiên khu trệt.
+    var sids := GameManager.stations_on_floor(fid)
+    for i in sids.size():
+        _build_station(node, str(sids[i]), _station_slot(i, sids.size()), index)
 
     # Bàn ăn có sẵn của quán. Kê lùi xuống phía trước và dồn vào giữa để chừa hai
     # lối đi thật: một lối chạy dọc trước mặt quầy bếp, một lối rộng bên phải nối
     # thẳng từ cửa ra vỉa hè vào trong. Bàn phải trước kê sát góc, lối vào chỉ còn
     # bốn tấc — người bưng cơm với khách chen nhau ở đó là kẹt cứng.
-    var spots: Array = [Vector2(-2.15, 0.85), Vector2(1.45, 0.85)]
+    var spots: Array = [Vector2(-2.15, 0.85), Vector2(1.05, 0.85)]
     _tables[index] = []
     for i in spots.size():
         _build_table(node, spots[i], index)
@@ -534,6 +600,7 @@ func _build_floor(node: Node3D, fid: String, index: int) -> void:
     _build_decor(node, fid, index, accent)
     _build_fridges(node, fid, index, accent)
     _build_placed(node, index)
+    _seal_solids(index)
     _populate(node, fid, index)
 
 
@@ -1566,12 +1633,15 @@ func _build_juice_bar(holder: Node3D, open: bool, trim: Color) -> void:
         _cylinder(holder, 0.045, 0.045, 0.09, C_ORANGE, x, 1.27, 0.02 + float(i) * 0.16, 10)
 
 
+## `sid` là khoá ghép "quầy@khu": hình dạng thì tra theo TÊN QUẦY, còn cấp và
+## tiến độ thì hỏi thẳng bằng khoá ghép nên mỗi khu một đằng.
 func _build_station(parent: Node3D, sid: String, pos: Vector3, floor_index: int) -> void:
+    var base := GameManager.station_base(sid)
     var open := GameManager.is_station_open(sid)
     var accent: Color = FLOOR_ACCENTS[floor_index % FLOOR_ACCENTS.size()]
 
     var holder := Node3D.new()
-    holder.name = "St_" + sid
+    holder.name = "St_" + base
     holder.position = pos
     parent.add_child(holder)
 
@@ -1582,7 +1652,7 @@ func _build_station(parent: Node3D, sid: String, pos: Vector3, floor_index: int)
     var chop: Dictionary = {}
     var pot: Dictionary = {}
 
-    match sid:
+    match base:
         "grill":
             # quầy trong quán KHÔNG nướng: nó là lò giữ nhiệt, giữ ấm sườn đã nướng
             warm = _build_warmer(holder, open, body_col, trim)
@@ -1641,6 +1711,8 @@ func _build_station(parent: Node3D, sid: String, pos: Vector3, floor_index: int)
     # bên phải màn hình, còn tiền thì bấm nút THU (hoặc thuê quản lý) là gom hết.
     _touch_area(holder, "boost", sid, Vector3(0, 1.05, 0), Vector3(1.2, 1.9, 1.15))
 
+    # Khoá ở đây là khoá ghép "quầy@khu" của GameManager, nên quầy cùng tên ở ba
+    # khu vẫn là ba mục riêng, không cái nào đè cái nào.
     _station_nodes[sid] = {
         "holder": holder, "smoke": smoke, "warm": warm, "chop": chop, "pot": pot,
         "floor": floor_index, "punch": 0.0,
@@ -1800,8 +1872,8 @@ func _build_manager(node: Node3D, fid: String, index: int) -> void:
 
 func _populate(node: Node3D, fid: String, index: int) -> void:
     var hd := ROOM_D * 0.5
-    # Bếp chỉ có một dãy ngoài vỉa hè, nên người đứng bếp cũng chỉ có ở đó.
-    var sids: Array = GameManager.stations_on_floor(fid) if index == 0 else []
+    # Khu nào cũng có dãy quầy của mình, nên khu nào cũng có người đứng bếp.
+    var sids: Array = GameManager.stations_on_floor(fid)
     # nhớ luôn quầy đó nằm ở ô thứ mấy, để người đứng đúng sau quầy của mình
     var open_here: Array = []
     for i in sids.size():
@@ -1813,7 +1885,7 @@ func _populate(node: Node3D, fid: String, index: int) -> void:
     var has_grill := false
     for e in open_here:
         var ent: Dictionary = e
-        if str(ent["sid"]) == "grill":
+        if GameManager.station_base(str(ent["sid"])) == "grill":
             has_grill = true
     if index == 0 and has_grill:
         _build_griller(node)
@@ -1826,8 +1898,9 @@ func _populate(node: Node3D, fid: String, index: int) -> void:
         if made >= 4:
             break
         var sid_here := str(ent["sid"])
+        var base_here := GameManager.station_base(sid_here)
         # người của lò nướng đã ra ngoài đứng lò than rồi, khỏi dựng lại
-        if index == 0 and sid_here == "grill":
+        if index == 0 and base_here == "grill":
             continue
         var sp := _station_slot(int(ent["slot"]), sids.size())
         var ch := ComTamChars.build(cook_keys[made % cook_keys.size()])
@@ -1849,7 +1922,7 @@ func _populate(node: Node3D, fid: String, index: int) -> void:
         node.add_child(ch)
         var crig := ComTamChars.rig_of(ch)
         # người đứng bàn bì & chả cầm sẵn con dao bầu để thái
-        var knife = ComTamChars.attach_knife(crig) if sid_here == "prep" else null
+        var knife = ComTamChars.attach_knife(crig) if base_here == "prep" else null
         # quầy nào có nồi đậy nắp thì người đứng đó cầm sẵn cái vá xới, tới lúc
         # mở nắp ra đảo mới lòi vá ra tay
         var paddle = ComTamChars.attach_paddle(crig) if not pot_here.is_empty() else null
@@ -1955,52 +2028,57 @@ func _process(delta: float) -> void:
 func _update_stations() -> void:
     var dt := get_process_delta_time()
     for sid in _station_nodes:
-        var st: Dictionary = _station_nodes[sid]
-        var holder: Node3D = st["holder"]
+        _update_station(_station_nodes[sid], dt)
 
-        # nhún một cái khi vừa được thúc nấu nhanh
-        var punch := float(st["punch"])
-        if punch > 0.0:
-            punch = maxf(0.0, punch - dt * 3.5)
-            st["punch"] = punch
-            var sc := 1.0 + sin(punch * PI) * 0.06
-            holder.scale = Vector3(sc, sc, sc)
-        elif holder.scale.x != 1.0:
-            holder.scale = Vector3.ONE
 
-        # bàn bì & chả: hết thứ nào thì thứ đó biến khỏi thớt
-        var chop: Dictionary = st.get("chop", {})
-        if not chop.is_empty():
-            (chop["bi"] as Node3D).visible = float(GameManager.stock.get("bi", 0.0)) >= 1.0
-            (chop["cha"] as Node3D).visible = float(GameManager.stock.get("cha", 0.0)) >= 1.0
+## Một cái quầy của một khu: nhún khi được thúc, ẩn hiện đồ trên thớt,
+## bày lại số miếng sườn trong lò giữ nhiệt và cho khói bay lên.
+func _update_station(st: Dictionary, dt: float) -> void:
+    var holder: Node3D = st["holder"]
 
-        # lò giữ nhiệt: số miếng sườn bày trong lò đúng bằng số miếng đang có,
-        # lò rộng hơn sức bày thì mỗi miếng đại diện cho vài miếng trong kho
-        var warm: Array = st.get("warm", [])
-        if not warm.is_empty():
-            var cap := GameManager.warmer_capacity()
-            var shown := mini(cap, WARM_SLOTS)
-            var have := int(GameManager.stock.get("grilled", 0.0))
-            var lit := 0
-            if cap > 0:
-                lit = int(ceil(float(have) * float(shown) / float(cap)))
-            lit = clampi(lit, 0, warm.size())
-            for i in warm.size():
-                var slab: MeshInstance3D = warm[i]
-                var want := i < lit
-                if slab.visible != want:
-                    slab.visible = want
+    # nhún một cái khi vừa được thúc nấu nhanh
+    var punch := float(st["punch"])
+    if punch > 0.0:
+        punch = maxf(0.0, punch - dt * 3.5)
+        st["punch"] = punch
+        var sc := 1.0 + sin(punch * PI) * 0.06
+        holder.scale = Vector3(sc, sc, sc)
+    elif holder.scale.x != 1.0:
+        holder.scale = Vector3.ONE
 
-        for smk in st["smoke"]:
-            var n: Node3D = smk["node"]
-            n.position.y += dt * 0.4
-            var rise: float = n.position.y - float(smk["y0"])
-            var m := n.material_override as StandardMaterial3D
-            if m != null:
-                m.albedo_color.a = maxf(0.0, 0.42 * (1.0 - rise / 1.5))
-            if rise > 1.5:
-                n.position.y = float(smk["y0"])
-                n.position.x = randf_range(-0.35, 0.35)
+    # bàn bì & chả: hết thứ nào thì thứ đó biến khỏi thớt
+    var chop: Dictionary = st.get("chop", {})
+    if not chop.is_empty():
+        (chop["bi"] as Node3D).visible = float(GameManager.stock.get("bi", 0.0)) >= 1.0
+        (chop["cha"] as Node3D).visible = float(GameManager.stock.get("cha", 0.0)) >= 1.0
+
+    # lò giữ nhiệt: số miếng sườn bày trong lò đúng bằng số miếng đang có,
+    # lò rộng hơn sức bày thì mỗi miếng đại diện cho vài miếng trong kho
+    var warm: Array = st.get("warm", [])
+    if not warm.is_empty():
+        var cap := GameManager.warmer_capacity()
+        var shown := mini(cap, WARM_SLOTS)
+        var have := int(GameManager.stock.get("grilled", 0.0))
+        var lit := 0
+        if cap > 0:
+            lit = int(ceil(float(have) * float(shown) / float(cap)))
+        lit = clampi(lit, 0, warm.size())
+        for i in warm.size():
+            var slab: MeshInstance3D = warm[i]
+            var want := i < lit
+            if slab.visible != want:
+                slab.visible = want
+
+    for smk in st["smoke"]:
+        var n: Node3D = smk["node"]
+        n.position.y += dt * 0.4
+        var rise: float = n.position.y - float(smk["y0"])
+        var m := n.material_override as StandardMaterial3D
+        if m != null:
+            m.albedo_color.a = maxf(0.0, 0.42 * (1.0 - rise / 1.5))
+        if rise > 1.5:
+            n.position.y = float(smk["y0"])
+            n.position.x = randf_range(-0.35, 0.35)
 
 
 ## Đoạn thẳng p->q có xiên qua hình chữ nhật (tâm c, nửa chiều h) không? Trả về
@@ -2032,120 +2110,124 @@ func _seg_hits_box(p: Vector2, q: Vector2, c: Vector2, h: Vector2) -> float:
     return t0
 
 
-## Ngắm vòng qua một GÓC của khối chắn đường: trong bốn góc, lấy hai góc lệch xa
-## nhất sang hai bên so với hướng đang đi, rồi đi vòng qua bên nào lệch ít hơn.
-##
-## Chọn xong phải NHỚ, hễ còn vướng cái khối đó thì cứ vòng bên ấy. Cứ mỗi khung
-## hình lại chọn lại thì tới góc bàn là người lắc qua lắc lại rồi đứng luôn ở đó
-## — đúng cái kẹt ở góc phải trong nhà.
-func _corner_around(a: Dictionary, p: Vector2, d: Vector2, c: Vector2, h: Vector2) -> Vector2:
-    var along := d - p
-    if along.length() < 0.001:
-        return d
-    along = along.normalized()
-    var lat := Vector2(-along.y, along.x)
-    var lo := Vector2.ZERO
-    var hi := Vector2.ZERO
-    var lo_v := 1e9
-    var hi_v := -1e9
-    for sx in [-1.0, 1.0]:
-        for sz in [-1.0, 1.0]:
-            var corner: Vector2 = c + Vector2(h.x * float(sx), h.y * float(sz))
-            var v := (corner - p).dot(lat)
-            if v < lo_v:
-                lo_v = v
-                lo = corner
-            if v > hi_v:
-                hi_v = v
-                hi = corner
-    var side := 1.0 if absf(hi_v) < absf(lo_v) else -1.0
-    if a.has("_side") and (a.get("_side_c", Vector2.ZERO) as Vector2) == c:
-        side = float(a["_side"])
-    a["_side_c"] = c
-    a["_side"] = side
-    # ngắm hơi ra ngoài góc một chút cho khỏi cạ vào đúng cái mũi bàn
-    return (hi if side > 0.0 else lo) + lat * side * 0.14
-
-
-## Chỗ cần NGẮM cho bước tới. Đường thẳng tới đích quang quẻ thì ngắm thẳng đích;
-## có cái bàn nằm chắn thì ngắm vòng qua góc nó. Xét hai lượt: vòng qua bàn rồi
-## mà còn vướng cái quầy thì vòng tiếp.
-func _steer(a: Dictionary, node: Node3D, target: Vector3) -> Vector3:
-    var list: Array = _solids.get(int(a.get("floor", 0)), [])
-    if list.is_empty():
-        return target
-    var pad := Vector2(BODY_R, BODY_R) * 1.05
-    var p := Vector2(node.position.x, node.position.z)
-    var d := Vector2(target.x, target.z)
-    var aim := d
-    var done: Array = []
-    for _pass in 2:
-        var best := -1.0
-        var bc := Vector2.ZERO
-        var bh := Vector2.ZERO
-        for s in list:
-            var sd: Dictionary = s
-            var c: Vector2 = sd["c"]
-            if done.has(c):
-                continue
-            var h: Vector2 = (sd["h"] as Vector2) + pad
-            # đích nằm ngay trong lòng khối (ghế sát bàn) thì đừng vòng, cứ đi vào
-            var near := Vector2(clampf(d.x, c.x - h.x, c.x + h.x), clampf(d.y, c.y - h.y, c.y + h.y))
-            if near.distance_squared_to(d) < 0.000001:
-                continue
-            var t := _seg_hits_box(p, aim, c, h)
-            if t < 0.0:
-                continue
-            if best < 0.0 or t < best:
-                best = t
-                bc = c
-                bh = h
-        if best < 0.0:
-            break
-        done.append(bc)
-        aim = _corner_around(a, p, aim, bc, bh)
-    if aim == d:
-        a.erase("_side")
-        a.erase("_side_c")
-    return Vector3(aim.x, target.y, aim.y)
-
-
-## Lưới an toàn: đẩy người ra khỏi mọi khối đặc của khu mình đang đứng, đụng cạnh
-## nào thì đẩy ngược ra đúng cạnh cạn nhất nên người TRƯỢT dọc mép bàn. Việc vòng
-## qua cái bàn là của `_steer()`; đây chỉ lo cái thân không lún vào gỗ.
-##
-## `dest` là chỗ cần tới: khối nào ôm sát chỗ đó (cái bàn của chính cái ghế mình
-## sắp ngồi chẳng hạn) thì bỏ qua, không thì khách đi tới nơi rồi bị đẩy bật ra,
-## cả đời không ngồi xuống được.
-func _avoid_solids(a: Dictionary, node: Node3D, dest: Vector3) -> void:
-    var list: Array = _solids.get(int(a.get("floor", 0)), [])
-    if list.is_empty():
-        return
-    var p := Vector2(node.position.x, node.position.z)
-    var d := Vector2(dest.x, dest.z)
+## Trước mặt còn quang không: bắn một tia dài `reach` theo hướng `dir`, đụng khối
+## nào trong danh sách là tắc.
+func _way_clear(list: Array, p: Vector2, dir: Vector2, reach: float) -> bool:
+    var q := p + dir * reach
     for s in list:
         var sd: Dictionary = s
         var c: Vector2 = sd["c"]
         var h: Vector2 = sd["h"]
-        var near := Vector2(clampf(d.x, c.x - h.x, c.x + h.x), clampf(d.y, c.y - h.y, c.y + h.y))
-        if near.distance_to(d) < BODY_R + 0.06:
+        if _seg_hits_box(p, q, c, h) >= 0.0:
+            return false
+    return true
+
+
+## Chỗ cần NGẮM cho bước tới.
+##
+## Cứ nhắm thẳng đích; trước mặt vướng thì QUẠT thử sang hai bên từng nấc 22 độ,
+## lấy hướng lệch ít nhất mà trước mặt còn quang. Đã lệch bên nào thì bước sau
+## ưu tiên bên đó, tới chừng nào đi thẳng lại được mới thôi — không nhớ bên thì
+## tới mép bàn là người lắc qua lắc lại rồi đứng luôn ở đó.
+##
+## Quạt cả nắm hướng như vầy hơn hẳn cách ngắm vào góc từng cái bàn: chỗ nào đồ
+## đạc xúm lại một cụm (quầy + hồ cá + chậu cây + bàn) thì ngắm vào góc cái này
+## lại chui vào lòng cái kia, còn tia quạt thì soi một lượt hết cả cụm.
+func _steer(a: Dictionary, node: Node3D, target: Vector3) -> Vector3:
+    var all: Array = _solids.get(int(a.get("floor", 0)), [])
+    if all.is_empty():
+        return target
+    var pad := Vector2(BODY_R, BODY_R) * 1.05
+    var p := Vector2(node.position.x, node.position.z)
+    var d := Vector2(target.x, target.z)
+    # Đang đứng lọt trong lòng khối nào thì ngắm từ chỗ ĐÃ RA NGOÀI khối đó — chứ
+    # đứng trong lòng cái quầy mà đòi vòng qua nó thì ngắm ra sau lưng quầy, có
+    # khi ngắm thẳng vào tường. Chỗ chờ hàng của shipper nằm lọt trong lòng quầy
+    # bếp nên lần nào cũng dính. Chỉ dời điểm ngắm thôi, người vẫn đứng nguyên.
+    for s in all:
+        var si: Dictionary = s
+        var ci: Vector2 = si["c"]
+        var hi: Vector2 = (si["h"] as Vector2) + pad
+        var ex := hi.x - absf(p.x - ci.x)
+        var ez := hi.y - absf(p.y - ci.y)
+        if ex <= 0.0 or ez <= 0.0:
             continue
-        var dx := p.x - c.x
-        var dz := p.y - c.y
-        var ox := h.x + BODY_R - absf(dx)      # lấn vào bao sâu theo chiều ngang
-        var oz := h.y + BODY_R - absf(dz)      # ... và theo chiều sâu
-        if ox <= 0.0 or oz <= 0.0:
-            continue
-        if ox < oz:
-            p.x = c.x + (h.x + BODY_R) * (1.0 if dx >= 0.0 else -1.0)
+        if ex < ez:
+            p.x = ci.x + (hi.x + 0.02) * (1.0 if p.x >= ci.x else -1.0)
         else:
-            p.y = c.y + (h.y + BODY_R) * (1.0 if dz >= 0.0 else -1.0)
-    node.position.x = p.x
-    node.position.z = p.y
+            p.y = ci.y + (hi.y + 0.02) * (1.0 if p.y >= ci.y else -1.0)
+
+    var to := d - p
+    var dist := to.length()
+    if dist < 0.01:
+        return target
+    var dir := to / dist
+    var reach := minf(0.95, dist)
+
+    # chỉ mấy khối quanh đây mới đáng soi, khối tận đầu kia khu thì bỏ
+    var near_list: Array = []
+    for s in all:
+        var sd: Dictionary = s
+        var c: Vector2 = sd["c"]
+        var h: Vector2 = (sd["h"] as Vector2) + pad
+        if absf(p.x - c.x) > h.x + reach or absf(p.y - c.y) > h.y + reach:
+            continue
+        # Đích nằm sát khối (cái ghế kê quanh bàn) thì kệ khối đó, cứ đi vào — đo
+        # trên khối THẬT chứ không đo trên khối đã nới thêm bề ngang người, y như
+        # `_avoid_solids`. Đo trên khối đã nới thì cái ghế ngoài vỉa hè hụt đúng
+        # 5 milimét, thế là khách lượn quanh bàn cả buổi không ngồi xuống được.
+        var hr: Vector2 = sd["h"]
+        var near := Vector2(clampf(d.x, c.x - hr.x, c.x + hr.x), clampf(d.y, c.y - hr.y, c.y + hr.y))
+        if near.distance_to(d) < BODY_R + 0.08:
+            continue
+        near_list.append({"c": c, "h": h})
+
+    if near_list.is_empty() or _way_clear(near_list, p, dir, reach):
+        # qua hẳn cái bàn đó rồi: quên bên vừa lệch đi, gặp cái sau tính lại
+        a.erase("_turn")
+        return target
+
+    # Quạt hai vòng: vòng đầu nhìn xa cho biết đường, không ra hướng nào thì vòng
+    # sau nhìn gần lại. Chỗ hẹp mà cứ đòi nhìn xa gần một mét thì hướng nào cũng
+    # thấy vướng — như cái khe chín tấc giữa bàn phải với hồ cá, đủ rộng để lách
+    # qua mà nhìn xa thì tưởng bít.
+    # Thứ tự thử: ĐANG lệch bên nào thì vét hết bên đó trước, bên đó bít hẳn mới
+    # chịu đổi bên. Chưa lệch bên nào thì mới so bên nào lệch ít hơn.
+    #
+    # Chỗ này quan trọng: cứ mỗi khung hình lại bốc theo góc lệch nhỏ nhất thì
+    # nhích sang trái một cái, bên phải liền hoá ra gần hơn, nhích lại sang phải
+    # — người rung tại chỗ suốt buổi. Bám một bên cho tới khi qua hẳn mới là đi.
+    var turn: float = float(a.get("_turn", 0.0))
+    var order: Array = []
+    if turn != 0.0:
+        for i in range(1, 8):
+            order.append(Vector2(float(i), turn))
+        for i in range(1, 8):
+            order.append(Vector2(float(i), -turn))
+    else:
+        for i in range(1, 8):
+            order.append(Vector2(float(i), 1.0))
+            order.append(Vector2(float(i), -1.0))
+    for far in [reach, reach * 0.45]:
+        var r: float = far
+        for o in order:
+            var oc: Vector2 = o
+            var nd := dir.rotated(oc.x * PI / 8.0 * oc.y)
+            if _way_clear(near_list, p, nd, r):
+                a["_turn"] = oc.y
+                return Vector3(p.x + nd.x * r, target.y, p.y + nd.y * r)
+    # bốn phía đều bít thì thôi, cứ nhắm thẳng mà đi xuyên qua — thà quẹt qua cái
+    # bàn một cái còn hơn đứng chết dí ở đó
+    return target
 
 
 ## Nhích một bước về phía `target`, có né đồ đạc nếu truyền vào `a` (người này
 ## thuộc khu nào thì né đồ khu đó). Trả về true khi đã tới nơi.
+##
+## KHÔNG có va chạm cứng: không ai bị đẩy ra, không ai bị chặn đứng. Người chỉ
+## LÁI để tránh bàn ghế (`_steer`), lỡ có quẹt vào mép bàn một cái thì thôi, chứ
+## không bao giờ bị kẹt cứng — đứng chết một chỗ khó coi hơn nhiều so với cạ vai
+## vào cái bàn.
 func _step_toward(node: Node3D, target: Vector3, speed: float, delta: float,
         a: Dictionary = {}) -> bool:
     var d := Vector2(target.x - node.position.x, target.z - node.position.z)
@@ -2164,8 +2246,6 @@ func _step_toward(node: Node3D, target: Vector3, speed: float, delta: float,
     aim = aim.normalized()
     node.position.x += aim.x * step
     node.position.z += aim.y * step
-    if not a.is_empty():
-        _avoid_solids(a, node, target)
     # quay mặt theo hướng ĐI THẬT, để lúc trượt dọc mép bàn thì người cũng xoay
     # theo mép bàn chứ không đi ngang như cua
     var mv := Vector2(node.position.x, node.position.z) - from
@@ -2257,7 +2337,7 @@ func _update_cook(a: Dictionary, rig: Dictionary, t: float) -> void:
     if not busy:
         ComTamChars.idle(rig, t)
         _set_pot_lid(pot, 0.0)
-    elif sid == "prep":
+    elif GameManager.station_base(sid) == "prep":
         ComTamChars.chop(rig, t)
     elif not pot.is_empty():
         # mỗi người lệch pha một chút cho khỏi cả quán cùng mở nắp một lượt
