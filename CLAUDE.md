@@ -49,6 +49,26 @@ lượt một lố, món cạn nhất đi trước, cho tới khi đầy hoặc 
 thì bỏ qua chứ không chặn mấy món còn thiếu. Mốc đầy là `stock_target()`, chính là
 `item_capacity()` — trần riêng của từng món do kho của nó quyết định.
 
+**Nấu nhanh là MUA đứt phần thời gian còn lại của mẻ**: trả tiền một cái là mẻ ra
+ngay, không phải đợi. Giá tính ba tầng:
+
+```
+boost_cost(quầy) = stations.<quầy>.boost_cost        (giá lúc quầy còn cấp 1)
+                 × chung.boost_cost_mult ^ (cấp - 1)  (mặc định 1.12)
+                 × phần mẻ CÒN LẠI (1 - tiến độ)
+```
+
+Nhân với phần còn lại nên thúc sớm trả trọn, thúc lúc mẻ gần xong thì gần như
+không mất gì — trả đúng khúc được rút ngắn. Giá cấp 1: nồi cơm 20.000 ₫ · bàn bì
+chả 10.000 ₫ · trà đá 1.500 ₫ · lò than vỉa hè 50.000 ₫ (`grill.boost_cost`,
+tính theo `grill_level`), chừng 30% giá trị một mẻ nên thúc vẫn lời.
+
+`boost_cost = 0` nghĩa là **quầy đó không thúc được**, và bảng của nó cũng không
+mọc ra nút nấu nhanh: **lò nướng thịt** để 0 vì nó chỉ giữ nhiệt cho sườn của lò
+than, có nấu nướng gì đâu mà thúc. `boost_station()`/`boost_grill()` chỉ đẩy kim
+đồng hồ tới `0.999` rồi để `_process`/`_tick_grill` kết mẻ theo đúng đường ra hàng
+cũ — đừng chép lại đoạn trừ nguyên liệu ở chỗ khác.
+
 `GameManager._load_balance()` đọc file này lúc khởi động rồi **ghi đè** lên số mặc
 định khai báo trong `scripts/game_manager.gd`. Thiếu khoá nào thì khoá đó giữ số
 mặc định, nên file JSON chỉ cần ghi phần muốn sửa. File hỏng cú pháp thì bỏ qua cả
@@ -58,6 +78,11 @@ Vì vậy mấy bảng số trong `game_manager.gd` phải là `static var` ch�
 `const` (const thì không ghi đè được). Và `export_presets.cfg` có
 `include_filter="data/*.json"` — JSON không phải "resource" của Godot nên thiếu
 dòng đó là file không được đóng gói vào APK.
+
+**Nút cộng tiền lúc test:** `chung.debug_tools` (mặc định `true`) bật khúc "Gỡ lỗi"
+cuối trang Cài đặt — ba nút +1 triệu / +10 triệu / +100 triệu và một nút xoá sạch ví,
+đều gọi `GameManager.debug_add_money()` (nhét thẳng vô ví, không đụng doanh thu hay
+uy tín). Phát hành thật thì để `"debug_tools": false` là cả khúc đó biến mất.
 
 ### Dây chuyền hai tầng: quầy làm ra phần, menu bán ra tiền
 

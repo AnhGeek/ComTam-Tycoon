@@ -230,6 +230,36 @@ func _build_options() -> void:
 	list_box.add_child(UIKit.spacer(4))
 	list_box.add_child(UIKit.muted("Tiến trình tự lưu vào cuối mỗi ngày trong game.", 11))
 
+	_build_debug()
+
+
+# ---------- Gỡ lỗi ----------
+
+func _build_debug() -> void:
+	# Mấy nút này chỉ để test cho nhanh, tắt bằng "debug_tools": false trong
+	# chung của data/balance.json là cả khúc này biến mất.
+	if not GameManager.DEBUG_TOOLS:
+		return
+
+	list_box.add_child(UIKit.spacer(6))
+	list_box.add_child(UIKit.section("Gỡ lỗi — chỉ dùng lúc test"))
+
+	for amount in [1000000.0, 10000000.0, 100000000.0]:
+		var money_amount: float = amount
+		var btn := UIKit.button_secondary("+ " + UIKit.money(money_amount) + " ₫", 13)
+		btn.custom_minimum_size = Vector2(0, 71)
+		btn.pressed.connect(func():
+			GameManager.debug_add_money(money_amount)
+			_toast("Đã cộng " + UIKit.money(money_amount) + " ₫"))
+		list_box.add_child(btn)
+
+	var clear_btn := UIKit.button_danger("XOÁ SẠCH TIỀN (VỀ 0 ₫)", 13)
+	clear_btn.custom_minimum_size = Vector2(0, 71)
+	clear_btn.pressed.connect(func():
+		GameManager.debug_add_money(-GameManager.money)
+		_toast("Ví trống trơn rồi"))
+	list_box.add_child(clear_btn)
+
 
 func _kv(grid: GridContainer, key: String, value: String) -> void:
 	grid.add_child(UIKit.muted(key, 11))

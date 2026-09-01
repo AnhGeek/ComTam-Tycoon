@@ -1248,18 +1248,32 @@ func _upgrade_card(sid: String) -> Control:
 	lvbar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	foot.add_child(lvbar)
 
-	# nấu nhanh: cú chạm "thúc" mẻ đang nấu, giữ lại nhịp bấm của game idle
-	var boost := UIKit.dark_button("NẤU NHANH", UIKit.NEON_BLUE, Color.WHITE, 13)
-	boost.custom_minimum_size = Vector2(UIKit.px(112), UIKit.px(30))
-	boost.disabled = not GameManager.has_ingredients(sid, 1)
-	boost.pressed.connect(func():
-		if GameManager.boost_station(sid):
-			_on_boosted(sid)
-			_show_station_card(sid, "upgrade")
-		else:
-			_toast("Hết nguyên liệu cho " + str(data["name"]).to_lower()))
-	foot.add_child(boost)
+	# Nấu nhanh: trả tiền cho mẻ ra ngay, giữ lại nhịp bấm của game idle. Quầy nào
+	# không nấu gì (lò nướng thịt chỉ giữ nhiệt) thì không có nút này.
+	var bcost := GameManager.boost_cost(sid)
+	if bcost > 0:
+		var boost := UIKit.dark_button("NẤU NHANH · %s ₫" % UIKit.money_short(float(bcost)),
+			UIKit.NEON_BLUE, Color.WHITE, 13)
+		boost.custom_minimum_size = Vector2(UIKit.px(112), UIKit.px(30))
+		boost.disabled = not GameManager.can_boost(sid)
+		boost.pressed.connect(func():
+			if GameManager.boost_station(sid):
+				_on_boosted(sid)
+				_show_station_card(sid, "upgrade")
+			else:
+				_toast(_why_no_boost(sid)))
+		foot.add_child(boost)
 	return card
+
+
+## Bấm nấu nhanh không được thì vì lẽ gì — nói đúng chuyện đang xảy ra.
+func _why_no_boost(sid: String) -> String:
+	var nm := str(GameManager.station_def(sid)["name"]).to_lower()
+	if not GameManager.has_ingredients(sid, 1):
+		return "Hết nguyên liệu cho " + nm
+	if GameManager.station_full(sid):
+		return "Kho đầy phần rồi, " + nm + " nghỉ tay"
+	return "Chưa đủ tiền thúc " + nm
 
 
 ## Một hàng lộ trình nâng cấp gọn: biểu tượng, tên + số liệu hiện tại, và nút
@@ -1437,6 +1451,20 @@ func _show_grill_card() -> void:
 		elif GameManager.grill_lit():
 			why = "Than vẫn đỏ nhưng hết sườn sống — vào Mua sắm nhập thêm"
 		v.add_child(UIKit.tag(why, UIKit.BAD, Color(0.71, 0.33, 0.25, 0.12)))
+
+	# Thúc mẻ: trả tiền cho vỉ sườn đang nướng chín ngay, khỏi đứng quạt than.
+	# Lò đang nghỉ (hết than, hết sườn, lò giữ nhiệt đầy) thì chẳng có mẻ nào để thúc.
+	var bcost := GameManager.grill_boost_cost()
+	var quick := UIKit.button_primary("THÚC MẺ · %s ₫" % UIKit.money(float(bcost)), 13)
+	quick.custom_minimum_size = Vector2(0, 62)
+	quick.disabled = not GameManager.can_boost_grill()
+	quick.pressed.connect(func():
+		if GameManager.boost_grill():
+			_toast("Quạt lửa cho mau chín!")
+			_show_grill_card()
+		else:
+			_toast("Lò đang nghỉ, chưa có mẻ nào để thúc"))
+	v.add_child(quick)
 
 	var cost := GameManager.grill_upgrade_cost()
 	var grill_maxed := GameManager.grill_at_max()

@@ -50,6 +50,7 @@
 			"keep": 0,
 			"keep_step": 0,
 			"up_cost": 120000,
+			"boost_cost": 0,
 			"recipe": {
 				"grilled": 1
 			},
@@ -91,6 +92,7 @@
 			"keep": 40,
 			"keep_step": 8,
 			"up_cost": 90000,
+			"boost_cost": 20000,
 			"recipe": {
 				"rice": 0.5,
 				"gas": 0.01
@@ -133,6 +135,7 @@
 			"keep": 40,
 			"keep_step": 8,
 			"up_cost": 160000,
+			"boost_cost": 10000,
 			"recipe": {
 				"bi": 1,
 				"cha": 1
@@ -175,6 +178,7 @@
 			"keep": 60,
 			"keep_step": 12,
 			"up_cost": 60000,
+			"boost_cost": 1500,
 			"recipe": {
 				"ice": 1,
 				"tea": 1
@@ -387,6 +391,7 @@
 		"coal_per_batch": 1,
 		"up_cost": 240000.0,
 		"up_mult": 1.8,
+		"boost_cost": 50000.0,
 		"up_costs": [
 			0,
 			240000,
@@ -718,16 +723,18 @@
 		}
 	},
 	"chung": {
-		"start_money": 3000000,
+		"start_money": 300000000,
 		"day_duration": 180.0,
 		"customer_patience": 28.0,
 		"manager_cost_mult": 6.0,
 		"station_up_mult": 1.45,
+		"boost_cost_mult": 1.12,
 		"level_speed_gain": 0.05,
 		"level_batch_every": 4,
 		"offline_max_seconds": 14400.0,
 		"offline_rate": 0.5,
-		"max_level": 25
+		"max_level": 25,
+		"debug_tools": true
 	},
 	"pantry": {
 		"_ghi_chu": "Kho đồ khô, cách tính y hệt kho lạnh. Gas đo theo BÌNH: một bình nấu 100 suất cơm (nồi cơm ăn 0.01 bình mỗi phần).",

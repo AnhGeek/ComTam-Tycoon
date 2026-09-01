@@ -77,18 +77,19 @@ static var STATIONS := {
 		# quầy này không nấu gì hết: nó là cái lò giữ nhiệt, chỉ CHỨA sườn do lò
 		# than ngoài vỉa hè nướng ra. Công thức {grilled: 1} để lại là để người
 		# đứng quầy biết lúc nào hết hàng mà nghỉ tay, và để màn hình báo động.
+		# "boost_cost" = 0: quầy này KHÔNG thúc được, nó có nấu nướng gì đâu.
 		"out": "", "recipe": {"grilled": 1}, "base_price": 25000, "cycle": 12.0,
-		"batch": 2, "keep": 0, "keep_step": 0, "up_cost": 120000},
+		"batch": 2, "keep": 0, "keep_step": 0, "up_cost": 120000, "boost_cost": 0},
 	"rice": {"floor": "street", "name": "Nồi cơm tấm", "dish": "Phần cơm tấm", "glyph": "▦",
 		"out": "com", "recipe": {"rice": 1, "gas": 1}, "base_price": 20000, "cycle": 10.0,
-		"batch": 2, "keep": 40, "keep_step": 8, "up_cost": 90000},
+		"batch": 2, "keep": 40, "keep_step": 8, "up_cost": 90000, "boost_cost": 20000},
 	"prep": {"floor": "street", "name": "Bàn bì & chả", "dish": "Phần bì chả", "glyph": "▩",
 		# đúng như cái tên: bàn này thái BÌ và CHẢ, hết một trong hai là đứng tay
 		"out": "bicha", "recipe": {"bi": 1, "cha": 1}, "base_price": 30000, "cycle": 15.0,
-		"batch": 2, "keep": 40, "keep_step": 8, "up_cost": 160000},
+		"batch": 2, "keep": 40, "keep_step": 8, "up_cost": 160000, "boost_cost": 10000},
 	"drink": {"floor": "street", "name": "Quầy trà đá", "dish": "Ly trà đá", "glyph": "▥",
 		"out": "trada", "recipe": {"ice": 1, "tea": 1}, "base_price": 5000, "cycle": 8.0,
-		"batch": 3, "keep": 60, "keep_step": 12, "up_cost": 60000},
+		"batch": 3, "keep": 60, "keep_step": 12, "up_cost": 60000, "boost_cost": 1500},
 }
 
 ## MENU — mấy món THẬT SỰ bán ra tiền. Khách ngồi bàn gọi một món hợp với khu
@@ -127,6 +128,8 @@ static var GRILL_BATCH_STEP := 4   # mỗi cấp thêm chừng này miếng
 static var GRILL_CYCLE := 24.0   # giây cho trọn một mẻ
 static var GRILL_COAL := 1.0   # bao than cháy hết cho mỗi mẻ
 static var GRILL_UP_COST := 240000.0
+## Tiền thúc cho xong mẻ sườn đang nướng, tính lúc lò còn cấp 1
+static var GRILL_BOOST_COST := 50000.0
 
 ## Lò giữ nhiệt trong quầy: sườn nướng xong ngoài hiên bưng vào đây nằm chờ khách,
 ## nên nó quyết định quán trữ sẵn được bao nhiêu miếng. Lò đầy thì lò than ngoài
@@ -182,6 +185,10 @@ static var LEVEL_BATCH_EVERY := 4
 static var GRILL_UP_MULT := 1.8
 static var WARMER_UP_MULT := 1.75
 
+## Nấu nhanh đắt thêm bao nhiêu lần mỗi cấp. Quầy càng cao cấp thì một mẻ càng
+## nhiều phần và càng mau, nên tiền thúc cũng phải đi lên theo.
+static var BOOST_COST_MULT := 1.12
+
 ## Tiền vốn lúc mở quán mới.
 static var START_MONEY := 3000000.0
 
@@ -233,6 +240,9 @@ static var FURNITURE := {
 ## Thu nhập khi vắng mặt: chỉ quầy có quản lý mới chạy, hiệu suất 50%, tối đa 4 giờ.
 static var OFFLINE_MAX_SECONDS := 14400.0
 static var OFFLINE_RATE := 0.5
+# Bật mấy nút cộng tiền ở trang Cài đặt để test cho nhanh.
+# Tắt bằng cách để "debug_tools": false trong chung của data/balance.json.
+static var DEBUG_TOOLS := true
 
 ## Nhiệm vụ: "kind" là tên chỉ số trong `stats`, đạt "target" thì nhận thưởng.
 static var MISSIONS := [
@@ -335,6 +345,7 @@ func _load_balance() -> void:
 		{"name": TYPE_STRING, "dish": TYPE_STRING, "out": TYPE_STRING,
 		"base_price": TYPE_FLOAT, "cycle": TYPE_FLOAT, "batch": TYPE_INT,
 		"keep": TYPE_INT, "keep_step": TYPE_INT, "up_cost": TYPE_FLOAT,
+		"boost_cost": TYPE_FLOAT,
 		"recipe": TYPE_DICTIONARY, "up_costs": TYPE_ARRAY})
 	_merge_rows(d.get("menu", {}), MENU,
 		{"name": TYPE_STRING, "desc": TYPE_STRING, "price": TYPE_INT,
@@ -376,6 +387,7 @@ func _load_balance() -> void:
 		GRILL_COAL = float(gd.get("coal_per_batch", GRILL_COAL))
 		GRILL_UP_COST = float(gd.get("up_cost", GRILL_UP_COST))
 		GRILL_UP_MULT = float(gd.get("up_mult", GRILL_UP_MULT))
+		GRILL_BOOST_COST = float(gd.get("boost_cost", GRILL_BOOST_COST))
 		if typeof(gd.get("up_costs")) == TYPE_ARRAY:
 			GRILL_UP_COSTS = (gd["up_costs"] as Array).duplicate()
 
@@ -426,10 +438,12 @@ func _load_balance() -> void:
 		CUSTOMER_PATIENCE = float(md.get("customer_patience", CUSTOMER_PATIENCE))
 		MANAGER_COST_MULT = float(md.get("manager_cost_mult", MANAGER_COST_MULT))
 		STATION_UP_MULT = float(md.get("station_up_mult", STATION_UP_MULT))
+		BOOST_COST_MULT = float(md.get("boost_cost_mult", BOOST_COST_MULT))
 		LEVEL_SPEED_GAIN = float(md.get("level_speed_gain", LEVEL_SPEED_GAIN))
 		LEVEL_BATCH_EVERY = int(md.get("level_batch_every", LEVEL_BATCH_EVERY))
 		OFFLINE_MAX_SECONDS = float(md.get("offline_max_seconds", OFFLINE_MAX_SECONDS))
 		OFFLINE_RATE = float(md.get("offline_rate", OFFLINE_RATE))
+		DEBUG_TOOLS = bool(md.get("debug_tools", DEBUG_TOOLS))
 
 
 ## Chép những khoá cho phép sửa từ bảng JSON sang bảng số của game, ép đúng kiểu
@@ -1590,13 +1604,68 @@ func claim_mission(id: String) -> float:
 	return 0.0
 
 
-# ---------------- Chạm để nấu nhanh ----------------
+# ---------------- Nấu nhanh: trả tiền cho xong mẻ ----------------
 
-## Người chơi chạm vào quầy: đẩy nhanh mẻ đang nấu (phần chơi chủ động).
-func boost_station(id: String) -> bool:
-	if not is_station_open(id) or not has_ingredients(id, 1):
+## Nấu nhanh là MUA đứt phần thời gian còn lại của mẻ đang nấu: trả tiền một cái
+## là mẻ ra ngay, không phải ngồi đợi. Giá tính ba tầng:
+##
+##   giá gốc (`boost_cost` của quầy trong balance.json)
+##   × BOOST_COST_MULT^(cấp - 1)   — quầy cao cấp mẻ to hơn nên thúc đắt hơn
+##   × phần mẻ CÒN LẠI             — thúc sớm trả trọn, thúc lúc gần xong gần như
+##                                   không mất gì, vì có rút ngắn được bao nhiêu đâu
+##
+## `boost_cost` bằng 0 nghĩa là quầy đó không thúc được — lò nướng thịt chỉ giữ
+## nhiệt cho sườn của lò than, nó có nấu nướng gì đâu mà thúc.
+func boost_cost(id: String) -> int:
+	var base := float(station_def(id).get("boost_cost", 0.0))
+	if base <= 0.0 or str(station_def(id).get("out", "")).is_empty():
+		return 0
+	var lv := maxi(station_level(id), 1)
+	var left := clampf(1.0 - float(progress.get(id, 0.0)), 0.0, 1.0)
+	return int(round(base * pow(BOOST_COST_MULT, float(lv - 1)) * left))
+
+
+## Bấm được nút nấu nhanh hay không: quầy phải đang mở, thúc được, còn nguyên
+## liệu, kho chưa đầy và trong ví đủ tiền.
+func can_boost(id: String) -> bool:
+	if not is_station_open(id) or boost_cost(id) <= 0:
 		return false
-	progress[id] = minf(float(progress[id]) + 0.14, 0.999)
+	if station_full(id) or not has_ingredients(id, 1):
+		return false
+	return can_afford(float(boost_cost(id)))
+
+
+## Trả tiền xong thì chỉ việc đẩy kim đồng hồ tới sát vạch: khung hình kế tiếp
+## `_process` kết mẻ theo đúng đường ra hàng cũ (trần kho, phần lẻ nguyên liệu,
+## báo hết hàng) — đừng chép lại đoạn đó ở đây.
+func boost_station(id: String) -> bool:
+	if not can_boost(id):
+		return false
+	if not _spend(float(boost_cost(id))):
+		return false
+	progress[id] = 0.999
+	_bump("boosts")
+	return true
+
+
+## Tiền thúc cho xong mẻ sườn ngoài lò than, tính y hệt quầy trong quán.
+func grill_boost_cost() -> int:
+	var left := clampf(1.0 - grill_progress, 0.0, 1.0)
+	return int(round(GRILL_BOOST_COST * pow(BOOST_COST_MULT, float(grill_level - 1)) * left))
+
+
+func can_boost_grill() -> bool:
+	# `grill_running` đã hỏi đủ ba chuyện: còn than, còn sườn sống, lò giữ nhiệt
+	# còn chỗ. Thiếu thứ nào thì có thúc cũng chẳng ra miếng nào.
+	return grill_running() and can_afford(float(grill_boost_cost()))
+
+
+func boost_grill() -> bool:
+	if not can_boost_grill():
+		return false
+	if not _spend(float(grill_boost_cost())):
+		return false
+	grill_progress = 0.999
 	_bump("boosts")
 	return true
 
@@ -1673,6 +1742,13 @@ func _apply_offline(seconds: float) -> void:
 
 func can_afford(cost: float) -> bool:
 	return money >= cost
+
+
+func debug_add_money(amount: float) -> void:
+	# Cửa sau lúc test: nhét thẳng tiền vào ví, không đụng tới doanh thu hay uy tín.
+	money = maxf(0.0, money + float(round(amount)))
+	money_changed.emit()
+	_log("Gỡ lỗi: cộng %s ₫" % UIKit.money(amount))
 
 
 func _spend(cost: float) -> bool:
