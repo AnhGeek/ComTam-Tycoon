@@ -28,6 +28,11 @@
 		"  unit là chữ hiện trên màn Mua sắm (kg · bình · miếng · bao...). Mấy món có",
 		"  pack = 0 là bán thành phẩm tự làm, không mua ngoài chợ được.",
 		"floors.cost: giá mở khu — trả một lần, không có cấp.",
+		"QUẢN LÝ TỰ ĐI CHỢ: quầy nào thuê quản lý thì nguyên liệu của quầy đó tụt dưới",
+		"  manager_buy_at (phần trần kho của KHU đó) là tự nhập một phát cho đầy trần,",
+		"  cứ manager_buy_every giây ngó một lần. Thiếu tiền thì nhập được bao nhiêu hay",
+		"  bấy nhiêu. manager_buy_reserve là khoản chừa lại trong ví, không cho quản lý",
+		"  tiêu tới — để 0 là quản lý tiêu tới đồng cuối cùng.",
 		"grill: lò than vỉa hè. warmer: lò giữ nhiệt trong quầy.",
 		"KHO: quán có hai kho, mỗi khu tự mua tủ/kệ của khu mình rồi nâng cấp riêng,",
 		"  nhưng chỗ trữ thì góp chung. fridge = kho lạnh (sườn · bì · chả · đá bi),",
@@ -734,7 +739,10 @@
 		"offline_max_seconds": 14400.0,
 		"offline_rate": 0.5,
 		"max_level": 25,
-		"debug_tools": true
+		"debug_tools": true,
+		"manager_buy_at": 0.25,
+		"manager_buy_every": 5.0,
+		"manager_buy_reserve": 0
 	},
 	"pantry": {
 		"_ghi_chu": "Kho đồ khô, cách tính y hệt kho lạnh. Gas đo theo BÌNH: một bình nấu 100 suất cơm (nồi cơm ăn 0.01 bình mỗi phần).",

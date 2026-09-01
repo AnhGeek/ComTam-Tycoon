@@ -33,18 +33,33 @@ var list_box: VBoxContainer
 var toast_label: Label
 var toast_panel: PanelContainer
 var toast_timer := 0.0
+## Kho vừa đổi, khung hình sau dựng lại danh sách một lần (xem _mark_dirty).
+var list_dirty := false
 
 
 func _ready() -> void:
     _build()
     GameManager.money_changed.connect(_refresh_money)
-    GameManager.stock_changed.connect(_rebuild_list)
-    GameManager.state_changed.connect(_rebuild_list)
+    # Đừng nối thẳng vào _rebuild_list: kho nhúc nhích liên tục (quầy ra mẻ mỗi
+    # giây, quản lý đi chợ, nhập nhanh cả loạt) mà mỗi tiếng lại dựng lại cả
+    # danh sách thì màn này giật, nặng nhất là lúc nhập cho cả 3 khu. Chỉ ghi
+    # dấu "cần dựng lại" rồi dựng đúng một lần ở khung hình kế tiếp.
+    GameManager.stock_changed.connect(_mark_dirty)
+    GameManager.state_changed.connect(_mark_dirty)
     _rebuild_list()
     _refresh_money()
 
 
+## Ghi dấu để khung hình sau dựng lại, thay vì dựng ngay tại chỗ.
+func _mark_dirty() -> void:
+    list_dirty = true
+
+
 func _process(delta: float) -> void:
+    if list_dirty:
+        list_dirty = false
+        _rebuild_list()
+
     if toast_timer > 0.0:
         toast_timer -= delta
         toast_panel.visible = toast_timer > 0.0
@@ -132,8 +147,8 @@ func _build() -> void:
     add_child(toast_panel)
 
 
-## Danh sách khu trên đầu trang. Tab nguyên liệu không cần chọn khu vì kho dùng
-## chung, nên chỗ đó chỉ ghi một dòng nhắc.
+## Danh sách khu trên đầu trang. Giờ tab nào cũng cần: kho lạnh và kho đồ khô
+## tách riêng theo khu rồi, nên nhập hàng cũng là nhập cho một khu.
 func _refresh_floor_row() -> void:
     if floor_row == null:
         return
@@ -141,10 +156,6 @@ func _refresh_floor_row() -> void:
         c.queue_free()
     if shop_floor.is_empty() or not GameManager.is_floor_unlocked(shop_floor):
         shop_floor = str(GameManager.FLOORS[0]["id"])
-    if current == "ingredients":
-        floor_row.visible = false
-        floor_note.text = "Kho nguyên liệu dùng chung cho cả 3 khu · mỗi món một trần riêng"
-        return
     floor_row.visible = true
     for f in GameManager.FLOORS:
         var fid := str(f["id"])
@@ -159,7 +170,9 @@ func _refresh_floor_row() -> void:
             _rebuild_list())
         floor_row.add_child(tb)
     var fname := str(GameManager.floor_data(shop_floor)["name"])
-    if current == "staff":
+    if current == "ingredients":
+        floor_note.text = "Đang nhập hàng về kho của: %s · mỗi khu một kho riêng" % fname
+    elif current == "staff":
         floor_note.text = "Đang thuê người cho: %s · lương khu này %s ₫/ngày" % [
             fname, UIKit.money(GameManager.floor_salary(shop_floor))]
     elif not store_kind_of(current).is_empty():
@@ -215,25 +228,37 @@ func _rebuild_list() -> void:
 
 
 func _build_ingredients() -> void:
-    list_box.add_child(UIKit.section("Kho nguyên liệu — mua theo lố"))
+    var fname := str(GameManager.floor_data(shop_floor)["name"])
+    list_box.add_child(UIKit.section("Kho của %s — mua theo lố" % fname.to_lower()))
 
-    var quick := UIKit.button_primary("NHẬP NHANH CHO ĐẦY KHO", 13)
+    var quick := UIKit.button_primary("NHẬP NHANH CHO ĐẦY KHO %s" % fname.to_upper(), 13)
     quick.custom_minimum_size = Vector2(0, 71)
     quick.pressed.connect(func():
         # món nào đã đầy thì thôi, món nào thiếu vẫn nhập — hết tiền mới chịu
-        var thieu := _has_low_stock()
-        var n := GameManager.buy_all_low()
+        var thieu := _has_low_stock(shop_floor)
+        var n := GameManager.buy_all_low(shop_floor)
         if n > 0:
             _toast("Đã nhập %d loại nguyên liệu" % n)
         elif thieu:
             _toast("Không đủ tiền nhập hàng")
         else:
-            _toast("Kho đang đầy, khỏi nhập"))
+            _toast("Kho khu này đang đầy, khỏi nhập"))
     list_box.add_child(quick)
+
+    # Ba khu ba cái kho nên bấm qua bấm lại mỏi tay: cho luôn một nút nhập đầy cả quán.
+    var quick_all := UIKit.button_secondary("NHẬP ĐẦY KHO CẢ 3 KHU", 13)
+    quick_all.custom_minimum_size = Vector2(0, 71)
+    quick_all.pressed.connect(func():
+        var n := GameManager.buy_all_low_everywhere()
+        if n > 0:
+            _toast("Đã đi một vòng chợ cho cả quán")
+        else:
+            _toast("Không nhập được gì — kho đầy hoặc hết tiền"))
+    list_box.add_child(quick_all)
 
     for id in GameManager.shop_ingredients():
         var d: Dictionary = GameManager.INGREDIENTS[id]
-        var qty := float(GameManager.stock.get(id, 0.0))
+        var qty := float(GameManager.stock_at(shop_floor, str(id)))
         var pack := int(d["pack"])
         var cost := float(d["price"]) * pack
 
@@ -256,14 +281,18 @@ func _build_ingredients() -> void:
             nr.add_child(UIKit.tag(str(GameManager.STORAGE[kind]["name"]).to_lower(),
                 UIKit.ACCENT_900, Color(0.31, 0.36, 0.54, 0.12)))
 
-        # Mỗi món một trần riêng do kho của nó quyết định.
-        var cap := float(GameManager.item_capacity(str(id)))
+        # Mỗi món một trần riêng, do kho của nó ở KHU NÀY quyết định.
+        var cap := float(GameManager.item_capacity(str(id), shop_floor))
         var full := cap > 0.0 and qty >= cap
         var low := cap > 0.0 and qty <= cap * 0.15
         var stock_col := UIKit.BAD if low else UIKit.N700
         info.add_child(UIKit.label("Còn %d/%d %s · lố %d · %s ₫/%s" % [
             int(qty), int(cap), str(d["unit"]), pack,
             UIKit.money(float(d["price"])), str(d["unit"])], 11, stock_col))
+        # cả quán gom lại bao nhiêu, để biết còn khu nào đang ôm hàng hộ
+        info.add_child(UIKit.muted("cả quán: %d/%d %s" % [
+            int(GameManager.stock_total(str(id))),
+            GameManager.item_capacity_all(str(id)), str(d["unit"])], 10))
         var bar_col: Color = UIKit.BAD if low else (UIKit.WARN if full else UIKit.ACCENT)
         info.add_child(UIKit.bar(clampf(qty / maxf(cap, 1.0) * 100.0, 0.0, 100.0), bar_col, 5))
         if full:
@@ -283,10 +312,10 @@ func _build_ingredients() -> void:
         buy.custom_minimum_size = Vector2(150, 75)
         buy.set_meta("cost", cost)
         buy.pressed.connect(func():
-            if GameManager.buy_ingredient(id):
-                _toast("Đã nhập %s vào kho" % str(d["name"]).to_lower())
-            elif GameManager.stock_room(str(id)) <= 0.0:
-                _toast("Kho đầy rồi — kê thêm chỗ trữ đi")
+            if GameManager.buy_ingredient(id, 1, shop_floor):
+                _toast("Đã nhập %s về %s" % [str(d["name"]).to_lower(), fname.to_lower()])
+            elif GameManager.stock_room(str(id), shop_floor) <= 0.0:
+                _toast("Kho khu này đầy rồi — kê thêm chỗ trữ đi")
             else:
                 _toast("Không đủ tiền"))
         h.add_child(buy)
@@ -388,11 +417,11 @@ func _build_store(kind: String) -> void:
 
     # ---- kho này đang chứa gì, mỗi món một trần riêng
     list_box.add_child(UIKit.spacer(6))
-    list_box.add_child(UIKit.section("Cả quán đang trữ"))
+    list_box.add_child(UIKit.section("%s đang trữ" % fname))
     for cid in st["items"]:
         var ing: Dictionary = GameManager.INGREDIENTS[cid]
-        var qty := float(GameManager.stock.get(cid, 0.0))
-        var cap := float(GameManager.item_capacity(str(cid)))
+        var qty := float(GameManager.stock_at(shop_floor, str(cid)))
+        var cap := float(GameManager.item_capacity(str(cid), shop_floor))
         var row := UIKit.card(9)
         var rv := VBoxContainer.new()
         rv.add_theme_constant_override("separation", 3)
@@ -401,10 +430,12 @@ func _build_store(kind: String) -> void:
             str(ing["name"]), int(qty), int(cap), str(ing["unit"])], 13, UIKit.ACCENT_900))
         rv.add_child(UIKit.bar(clampf(qty / maxf(cap, 1.0) * 100.0, 0.0, 100.0),
             UIKit.WARN if qty >= cap else UIKit.ACCENT, 5))
-        # khu này góp bao nhiêu vào cái trần đó
-        rv.add_child(UIKit.muted("có sẵn %d · %s góp %d" % [
-            GameManager.store_cap_base(kind, str(cid)), fname.to_lower(),
-            GameManager.store_floor_capacity(kind, shop_floor, str(cid))], 11))
+        # trần của khu này gồm phần có sẵn cộng phần mấy cái tủ/kệ khu này góp
+        rv.add_child(UIKit.muted("có sẵn %d · tủ kệ khu này góp %d · cả quán %d/%d" % [
+            GameManager.store_cap_base(kind, str(cid)),
+            GameManager.store_floor_capacity(kind, shop_floor, str(cid)),
+            int(GameManager.stock_total(str(cid))),
+            GameManager.item_capacity_all(str(cid))], 11))
         list_box.add_child(row)
 
 
@@ -418,9 +449,9 @@ func _slot_line(kind: String, lv: int) -> String:
 
 
 ## Còn món nào chưa đầy kho không — để cái toast nói cho đúng chuyện.
-func _has_low_stock() -> bool:
+func _has_low_stock(fid: String) -> bool:
     for id in GameManager.shop_ingredients():
-        if float(GameManager.stock.get(id, 0.0)) < GameManager.stock_target(str(id)):
+        if GameManager.stock_at(fid, str(id)) < GameManager.stock_target(str(id), fid):
             return true
     return false
 

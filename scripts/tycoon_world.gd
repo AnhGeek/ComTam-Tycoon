@@ -2046,11 +2046,14 @@ func _update_station(st: Dictionary, dt: float) -> void:
     elif holder.scale.x != 1.0:
         holder.scale = Vector3.ONE
 
+    # Kho tách theo khu rồi, nên đồ bày trên quầy phải hỏi kho của đúng khu đó.
+    var st_fid := str(GameManager.FLOORS[int(st.get("floor", 0))]["id"])
+
     # bàn bì & chả: hết thứ nào thì thứ đó biến khỏi thớt
     var chop: Dictionary = st.get("chop", {})
     if not chop.is_empty():
-        (chop["bi"] as Node3D).visible = float(GameManager.stock.get("bi", 0.0)) >= 1.0
-        (chop["cha"] as Node3D).visible = float(GameManager.stock.get("cha", 0.0)) >= 1.0
+        (chop["bi"] as Node3D).visible = GameManager.stock_at(st_fid, "bi") >= 1.0
+        (chop["cha"] as Node3D).visible = GameManager.stock_at(st_fid, "cha") >= 1.0
 
     # lò giữ nhiệt: số miếng sườn bày trong lò đúng bằng số miếng đang có,
     # lò rộng hơn sức bày thì mỗi miếng đại diện cho vài miếng trong kho
@@ -2058,7 +2061,7 @@ func _update_station(st: Dictionary, dt: float) -> void:
     if not warm.is_empty():
         var cap := GameManager.warmer_capacity()
         var shown := mini(cap, WARM_SLOTS)
-        var have := int(GameManager.stock.get("grilled", 0.0))
+        var have := int(GameManager.stock_at(st_fid, "grilled"))
         var lit := 0
         if cap > 0:
             lit = int(ceil(float(have) * float(shown) / float(cap)))
@@ -2393,7 +2396,7 @@ func _update_server(a: Dictionary, node: Node3D, rig: Dictionary, t: float, delt
             # Tới lúc này mới GỌI MÓN: trừ đúng số nguyên phần cơm, phần bì chả,
             # ly trà đá, miếng sườn trong kho. Bếp chưa ghép nổi suất nào thì
             # đứng chờ tiếp chứ không bưng khay không ra bàn.
-            var order := GameManager.take_order(fid)
+            var order := GameManager.take_order(fid, fid)
             if order.is_empty():
                 a["t"] = wait_for
                 return
@@ -2477,7 +2480,7 @@ func _update_shipper(a: Dictionary, node: Node3D, rig: Dictionary, t: float, del
             if float(a["t"]) > clampf(GameManager.service_time(fid) * 1.6, 2.5, 8.0):
                 # Chỉ chạy khi trong tay đã có hộp cơm thật: bếp hết hàng thì
                 # shipper đứng đợi ở quầy chứ không phóng đi tay không.
-                var order := GameManager.take_order("ship")
+                var order := GameManager.take_order("ship", fid)
                 if order.is_empty():
                     a["t"] = 0.0
                     return

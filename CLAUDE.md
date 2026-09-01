@@ -117,12 +117,12 @@ Không còn chỗ nào bán theo phần lẻ: mọi nguyên liệu, mọi suất
 
 ### Mỗi khu một dãy quầy riêng
 
-**Kho thì chung, quầy thì riêng.** Kho nguyên liệu và kho bán thành phẩm
-(`com`/`bicha`/`trada`/`grilled`) dùng chung cả quán, nhưng **cấp quầy, tiến độ mẻ
-và quản lý là của riêng từng khu**: nâng nồi cơm khu máy lạnh không làm nồi cơm
-vỉa hè chạy nhanh hơn, và khu nào cũng dựng đủ dãy quầy lẫn người đứng bếp của
-mình. Riêng **lò than vỉa hè** (`_build_griller`) vẫn độc nhất một cái ngoài hiên
-khu trệt, nên ở khu trên quầy `grill` (lò giữ nhiệt) có người đứng như quầy thường.
+**Khu nào lo khu nấy — kho cũng vậy.** Cấp quầy, tiến độ mẻ, quản lý, **và cả
+kho hàng** đều là của riêng từng khu: nâng nồi cơm khu máy lạnh không làm nồi cơm
+vỉa hè chạy nhanh hơn, bếp khu nào ăn gạo khu đó và phần cơm nấu ra cũng nằm lại
+khu đó. Khu nào cũng dựng đủ dãy quầy lẫn người đứng bếp của mình. Riêng **lò than
+vỉa hè** (`_build_griller`) vẫn độc nhất một cái ngoài hiên khu trệt, nên ở khu
+trên quầy `grill` (lò giữ nhiệt) có người đứng như quầy thường.
 
 Cách ghi: mọi thứ tính theo quầy — `levels` · `progress` · `managers` · `pending` ·
 `pending_portions` — dùng **khoá ghép `"<quầy>@<khu>"`**, ví dụ `"rice@aircon"`.
@@ -151,6 +151,58 @@ khoá ghép cho GameManager.
 Bong bóng tiền trên quầy (`pending`, `collect()`, nút "THU … ₫") **không còn được
 rót vào nữa** vì tiền chảy thẳng vô ví. Bộ khung vẫn nằm đó, quản lý quầy giờ chỉ
 còn tác dụng cho thu nhập lúc vắng mặt.
+
+### Kho theo khu — mọi thứ đi qua khoá khu
+
+`stock` và `ing_debt` là **hai tầng**: `stock[floor_id][item_id]`. Không còn chỗ
+nào đọc thẳng `GameManager.stock` nữa, hỏi qua mấy hàm này:
+
+| Muốn gì | Gọi hàm |
+|---|---|
+| Khu `fid` có bao nhiêu món `id` | `stock_at(fid, id)` |
+| Cả quán cộng lại (chỉ để hiện lên màn) | `stock_total(id)` |
+| Cộng/trừ kho (số âm là trừ) | `add_stock(fid, id, n)` |
+| Trần của món đó ở khu đó | `stock_cap(id, fid)` · `item_capacity(id, fid)` |
+| Còn nhét thêm được bao nhiêu | `stock_room(id, fid)` |
+| Trừ nguyên liệu (có cộng dồn phần lẻ) | `_use_ingredient(fid, ing, n)` |
+| Nhập hàng về một khu | `buy_ingredient(id, packs, fid)` |
+| Nhập đầy kho một khu / cả quán | `buy_all_low(fid)` · `buy_all_low_everywhere()` |
+| Bốc một đơn ở `where`, trừ hàng kho `fid` | `take_order(where, fid)` |
+
+**Bán thành phẩm cũng theo khu.** `com`/`bicha`/`trada` nấu ra ở khu nào thì nằm
+lại khu đó, người bưng của khu đó mới lấy được; shipper cũng lấy hộp cơm ngay tại
+khu mình đứng (`take_order("ship", fid)`).
+
+**Sườn nướng là ngoại lệ.** Lò than chỉ có một cái ngoài vỉa hè (`grill_floor()`),
+ăn than + sườn sống của **kho khu trệt**. Nướng xong thì `_tick_grill` **chia vòng
+tròn** vào lò giữ nhiệt của mọi khu đang mở, mỗi lượt một miếng cho khu còn chỗ —
+không vậy thì hai khu trên mất 4 trong 6 món của menu. Vì thế:
+
+- `warmer_fill(fid)` / `warmer_full(fid)` hỏi **một khu**; `warmers_full()` (mọi
+  khu đều chật) mới là cái làm lò than nghỉ tay.
+- `warmer_level` vẫn nâng chung cả quán — nâng một lần là khay khu nào cũng rộng ra.
+
+Save đời cũ ghi `stock`/`ing_debt` phẳng thì lúc load **dồn hết về khu vỉa hè**, y
+như cách `staff` và `decor` đã làm; hai khu trên bắt đầu với kho trống.
+
+### Quản lý tự đi chợ
+
+Quầy nào thuê quản lý thì **nguyên liệu của quầy đó không được để cạn**: cứ
+`chung.manager_buy_every` giây (mặc định 5), `_auto_restock()` đi một vòng, món nào
+tụt xuống dưới `chung.manager_buy_at` (mặc định 25%) phần trần kho **của khu đó**
+thì `_manager_buy()` nhập một phát cho **đầy trần** luôn. Ví không đủ thì nhập được
+bao nhiêu hay bấy nhiêu; `chung.manager_buy_reserve` là khoản chừa lại không cho
+quản lý đụng tới (mặc định 0 — quản lý tiêu tới đồng cuối cùng, cẩn thận lúc đang
+để dành mở khu).
+
+Quầy nào mua món nào thì `station_supplies(id)` quyết định: mặc định là đúng mấy
+thứ mua ngoài chợ trong `recipe` của nó, riêng quầy `grill` **ở đúng khu có lò
+than** thì mua thêm sườn sống + than. Nhờ mỗi nguyên liệu chỉ nằm trong công thức
+của một tên quầy nên không có chuyện hai quầy giành nhau một món.
+
+Ngoài chuyện đi chợ, quản lý vẫn là thứ **mở khoá thu nhập lúc vắng mặt** cho quầy
+đó (`_apply_offline` bỏ qua quầy không ai trông), và khu nào có quản lý thì
+`_build_manager` dựng một người mặc vest đứng trước quán.
 
 ### `install.sh`
 
@@ -188,6 +240,14 @@ MSYS_NO_PATHCONV=1 adb pull "/sdcard/s.png" <đích>    # thiếu env này Git B
 
 ## Bẫy đã dẫm phải
 
+- **Đừng nối thẳng `stock_changed` vào một hàm dựng lại cả danh sách.** Kho nhúc
+  nhích liên tục (quầy ra mẻ, quản lý đi chợ) mà mỗi tiếng lại dựng lại nguyên
+  trang thì màn đó giật; mua cả loạt trong một vòng lặp thì **treo hẳn game** —
+  bấm "nhập đầy cả 3 khu" là hơn trăm lần dựng lại ngay giữa vòng. Hai lớp chặn:
+  bên `GameManager` mấy hàm mua cả loạt (`buy_all_low`, `buy_all_low_everywhere`,
+  `_auto_restock`) kẹp trong `_quiet_begin()`/`_quiet_end()` để gom tín hiệu phát
+  đúng một lần (chỗ mua lẻ gọi `_emit_stock()` chứ không `stock_changed.emit()`);
+  bên view thì chỉ ghi dấu `list_dirty` rồi dựng lại một lần trong `_process`.
 - **Godot 4.7 coi "type inferred from a Variant value" là lỗi cứng**, không phải
   cảnh báo. Đừng dùng `:=` cho giá trị lấy từ Dictionary/Array (kể cả biến chạy
   trong `for x in [...]`) hay từ `abs()`. Ghi kiểu rõ ràng (`var v: Vector2 = ...`)
@@ -256,9 +316,9 @@ có ba lộ trình nâng cấp tách bạch: cấp quầy (cơm ra nhanh hơn), 
 ### Mua sắm quản lý theo khu
 
 Trang Mua sắm có hàng nút chọn khu nằm ngay dưới hàng tab (`shop_floor` trong
-`views/shopping_view.gd`), dùng chung cho tab **Nhân viên** và **Trang trí** —
-mua gì cũng là mua cho khu đang chọn. Tab **Nguyên liệu** không có nút chọn khu
-vì kho hàng dùng chung cả 3 khu.
+`views/shopping_view.gd`), dùng chung cho **mọi tab** — mua gì cũng là mua cho khu
+đang chọn, kể cả nhập nguyên liệu, vì kho giờ tách riêng từng khu. Tab Nguyên liệu
+có thêm nút "NHẬP ĐẦY KHO CẢ 3 KHU" cho đỡ phải bấm qua bấm lại.
 
 Trong `GameManager`, `staff` và `decor` đều là `floor_id -> {id -> số lượng}`.
 Tra cứu qua `staff_count(fid, id)` · `staff_total(id)` · `floor_crew(fid)` ·
@@ -328,16 +388,19 @@ trần số lượng trữ được:
 | Kho lạnh | `fridge` | sườn heo · bì · chả · **đá bi** | Tủ lạnh |
 | Kho đồ khô | `pantry` | gạo · trà · than · gas | Kệ đồ khô |
 
-Hai kho chạy **y hệt nhau**: mỗi khu tự mua tủ/kệ của khu mình (tối đa `max` cái)
-rồi nâng cấp riêng, nhưng **chỗ trữ thì góp chung** vào một cái kho của cả quán —
-vì kho nguyên liệu xưa giờ vẫn dùng chung.
+Hai kho chạy **y hệt nhau**, và **kho là của riêng từng khu**: mỗi khu tự mua
+tủ/kệ của khu mình (tối đa `max` cái), tự nâng cấp, tự chứa hàng của mình. Nhập
+gạo về vỉa hè thì bếp phòng máy lạnh vẫn đứng chờ gạo của nó.
 
-Sức chứa tính riêng **cho từng món**:
+Sức chứa tính riêng **cho từng món ở từng khu**:
 
 ```
-item_capacity(món) = cap_base[món]
-                   + Σ (mọi tủ/kệ của mọi khu) slot[món][cấp cái đó]
+item_capacity(món, khu) = cap_base[món]
+                        + (tủ/kệ của KHU ĐÓ) × slot[món][cấp tủ đó]
 ```
+
+`item_capacity_all(món)` mới là con số cộng cả ba khu, chỉ dùng để hiện lên màn
+hình chứ không dùng để chặn trần.
 
 Cả `cap_base` lẫn `slot` nằm trong `data/balance.json`, mỗi món một mảng
 `MAX_LEVEL` số, nên **chỉnh được từng mức chứa của từng món ở từng cấp**. Bảng
@@ -350,8 +413,9 @@ cấp 1 vừa đủ 100 phần cơm cả gạo lẫn gas.
 
 Trong `GameManager` mọi thứ đi qua bảng `STORAGE` và mấy hàm `store_*`:
 `store_count/store_level/store_slot/store_cap_base` · `store_cost/store_upgrade_cost`
-· `buy_store(kind, fid)` / `upgrade_store(kind, fid)` · `item_capacity(id)` ·
-`storage_of(id)` · `is_stored(id)` · `is_cold(id)`. Trạng thái nằm ở
+· `buy_store(kind, fid)` / `upgrade_store(kind, fid)` · `item_capacity(id, fid)` ·
+`item_capacity_all(id)` · `storage_of(id)` · `is_stored(id)` · `is_cold(id)`.
+Trạng thái nằm ở
 `stores[kind][fid]` và `store_levels[kind][fid]`. `fridge_count/fridge_level/
 buy_fridge/upgrade_fridge` chỉ còn là mấy cái tên cũ gọi vòng qua kho `"fridge"`
 (cảnh 3D `_build_fridges` dùng tới). Kệ đồ khô **chưa có mô hình 3D**, mới chỉ có

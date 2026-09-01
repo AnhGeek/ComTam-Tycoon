@@ -240,6 +240,13 @@ static var FURNITURE := {
 ## Thu nhập khi vắng mặt: chỉ quầy có quản lý mới chạy, hiệu suất 50%, tối đa 4 giờ.
 static var OFFLINE_MAX_SECONDS := 14400.0
 static var OFFLINE_RATE := 0.5
+
+## Quản lý tự đi chợ. Món nào tụt xuống dưới MGR_BUY_AT phần trần kho của khu thì
+## nhập một phát cho đầy trần luôn; cứ MGR_BUY_EVERY giây ngó kho một lần; và
+## chừa lại MGR_BUY_RESERVE đồng trong ví cho người chơi (mặc định không chừa).
+static var MGR_BUY_AT := 0.25
+static var MGR_BUY_EVERY := 5.0
+static var MGR_BUY_RESERVE := 0.0
 # Bật mấy nút cộng tiền ở trang Cài đặt để test cho nhanh.
 # Tắt bằng cách để "debug_tools": false trong chung của data/balance.json.
 static var DEBUG_TOOLS := true
@@ -267,7 +274,13 @@ var day_time := 0.0
 var reputation := 50.0
 var auto_open := true          # quán tự chạy ngày mới
 
-var stock: Dictionary = {}          # id -> số lượng
+## KHO TÁCH RIÊNG TỪNG KHU. Kho lạnh, kho đồ khô và cả rổ bán thành phẩm giờ là
+## của riêng mỗi khu: bếp khu nào ăn nguyên liệu khu đó, phần làm ra nằm lại khu
+## đó, người bưng của khu đó mới lấy được.
+##   stock[floor_id][item_id] = khu đó đang có bao nhiêu món đó
+## Ngoại lệ duy nhất là sườn nướng: lò than chỉ có một cái ngoài vỉa hè, nướng
+## xong thì chia vào lò giữ nhiệt của mấy khu đang mở (xem _tick_grill).
+var stock: Dictionary = {}          # floor_id -> {item_id -> số lượng}
 var prices: Dictionary = {}         # station_id -> giá bán
 var levels: Dictionary = {}         # station_id -> cấp (0 = chưa mở)
 var progress: Dictionary = {}       # station_id -> 0..1 tiến độ mẻ hiện tại
@@ -299,8 +312,18 @@ var grill_progress := 0.0           # mẻ đang nướng, 0..1
 ## Chỗ lẻ của công thức chưa đủ để rút khỏi kho. Công thức ghi được số lẻ (0.5 kg
 ## gạo một dĩa chẳng hạn) nhưng KHO thì luôn là số nguyên, nên phần lẻ nằm chờ ở
 ## đây: cứ đủ một đơn vị mới trừ kho một đơn vị.
-##   ing_debt[ingredient_id] = phần lẻ còn nợ, luôn trong khoảng 0..1
-var ing_debt: Dictionary = {}
+## Kho tách theo khu nên chỗ nợ lẻ cũng tách theo khu.
+##   ing_debt[floor_id][ingredient_id] = phần lẻ còn nợ, luôn trong khoảng 0..1
+var ing_debt: Dictionary = {}       # floor_id -> {ingredient_id -> phần lẻ}
+
+## Đếm ngược tới lượt quản lý đi chợ kế tiếp (xem _auto_restock).
+var _restock_timer := 0.0
+
+## Đang mua cả loạt hay không (nhập nhanh, quản lý đi chợ). Mua một lố mà phát
+## một tín hiệu thì mấy màn nghe nó dựng lại danh sách cả trăm lần ngay giữa
+## vòng lặp — bấm một cái là game đứng hình. Nên gom lại, xong xuôi mới phát
+## đúng một tiếng. Đếm chứ không phải cờ, để mấy vòng lồng nhau khỏi giẫm chân.
+var _stock_quiet := 0
 
 var stats: Dictionary = {}       # chỉ số cộng dồn cho nhiệm vụ
 var claimed: Dictionary = {}     # mission_id -> đã nhận thưởng
@@ -443,6 +466,9 @@ func _load_balance() -> void:
 		LEVEL_BATCH_EVERY = int(md.get("level_batch_every", LEVEL_BATCH_EVERY))
 		OFFLINE_MAX_SECONDS = float(md.get("offline_max_seconds", OFFLINE_MAX_SECONDS))
 		OFFLINE_RATE = float(md.get("offline_rate", OFFLINE_RATE))
+		MGR_BUY_AT = clampf(float(md.get("manager_buy_at", MGR_BUY_AT)), 0.0, 1.0)
+		MGR_BUY_EVERY = maxf(float(md.get("manager_buy_every", MGR_BUY_EVERY)), 0.5)
+		MGR_BUY_RESERVE = maxf(float(md.get("manager_buy_reserve", MGR_BUY_RESERVE)), 0.0)
 		DEBUG_TOOLS = bool(md.get("debug_tools", DEBUG_TOOLS))
 
 
@@ -484,10 +510,13 @@ func _reset_defaults() -> void:
 	lost_today = 0
 	logs.clear()
 	stock.clear()
-	# Mở quán ra là kho đầy ắp — mà "đầy" giờ là đầy đúng trần của từng món.
-	for id in INGREDIENTS:
-		stock[id] = 0.0
-	# bán thành phẩm phải tự nấu tự nướng, mở quán ra là kho trống trơn
+	# Mỗi khu một cái kho riêng. Số thật điền lại ở cuối hàm, lúc đã dựng xong
+	# tủ kệ nên mới biết trần từng món của từng khu.
+	for f in FLOORS:
+		var blank: Dictionary = {}
+		for id in INGREDIENTS:
+			blank[id] = 0.0
+		stock[str(f["id"])] = blank
 	prices.clear()
 	levels.clear()
 	progress.clear()
@@ -540,12 +569,19 @@ func _reset_defaults() -> void:
 	warmer_level = 1
 	grill_progress = 0.0
 	ing_debt.clear()
-	# Kho đã dựng xong ở trên nên giờ mới biết trần từng món: mở quán ra là đầy
-	# ắp mọi thứ mua được, còn bán thành phẩm thì phải tự nấu tự nướng.
-	for id in INGREDIENTS:
-		stock[id] = float(item_capacity(str(id))) if is_stored(str(id)) else 0.0
-	for id in MADE_ITEMS:
-		stock[id] = 0.0
+	_restock_timer = 0.0
+	# Kho đã dựng xong ở trên nên giờ mới biết trần từng món của từng khu: khu
+	# nào đã mở thì mở quán ra là đầy ắp đồ mua ngoài chợ, còn bán thành phẩm
+	# thì phải tự nấu tự nướng. Khu chưa mở thì kho trống trơn.
+	for f in FLOORS:
+		var fid := str(f["id"])
+		var room: Dictionary = {}
+		for id in INGREDIENTS:
+			room[id] = float(item_capacity(str(id), fid)) if is_stored(str(id)) else 0.0
+		for id in MADE_ITEMS:
+			room[id] = 0.0
+		stock[fid] = room
+		ing_debt[fid] = {}
 	stats = {"served": 0.0, "earned": 0.0, "upgrades": 0.0, "staff": 0.0,
 		"managers": 0.0, "decor": 0.0, "floors": 1.0, "boosts": 0.0, "reputation": 50.0}
 	claimed.clear()
@@ -720,15 +756,21 @@ func grill_at_max() -> bool:
 ## Còn than là lò còn đỏ lửa, dù chưa có miếng sườn nào trên vỉ. Hết sườn chỉ là
 ## không có gì để nướng, không phải lò tắt.
 func grill_lit() -> bool:
-	return float(stock.get("coal", 0.0)) >= GRILL_COAL
+	return stock_at(grill_floor(), "coal") >= GRILL_COAL
+
+
+## Lò than vỉa hè chỉ có một cái, nằm ngoài hiên khu trệt — than với sườn sống
+## của nó lấy ở kho khu đó.
+func grill_floor() -> String:
+	return str(FLOORS[0]["id"])
 
 
 ## Lò có đang nướng mẻ nào không: phải còn sườn sống cho cả mẻ và còn than.
 func grill_running() -> bool:
 	# lò giữ nhiệt còn chỗ mới nướng tiếp: nướng ra mà không chỗ để thì phí công
-	return float(stock.get("pork", 0.0)) >= float(grill_batch()) \
-		and float(stock.get("coal", 0.0)) >= GRILL_COAL \
-		and not warmer_full()
+	return stock_at(grill_floor(), "pork") >= float(grill_batch()) \
+		and stock_at(grill_floor(), "coal") >= GRILL_COAL \
+		and not warmers_full()
 
 
 ## Lò giữ nhiệt trong quầy trữ sẵn được bao nhiêu miếng sườn.
@@ -749,13 +791,24 @@ func warmer_at_max() -> bool:
 	return warmer_level >= MAX_LEVEL
 
 
-## Lò đang đầy tới đâu, 0..1 — dùng cho thanh mức và cho số miếng bày trong lò.
-func warmer_fill() -> float:
-	return clampf(float(stock.get("grilled", 0.0)) / float(warmer_capacity()), 0.0, 1.0)
+## Lò giữ nhiệt của MỘT khu đang đầy tới đâu, 0..1 — dùng cho thanh mức và cho
+## số miếng bày trong khay của khu đó. Khu nào cũng có khay riêng, nhưng cấp lò
+## thì nâng chung cho cả quán.
+func warmer_fill(fid: String) -> float:
+	return clampf(stock_at(fid, "grilled") / float(warmer_capacity()), 0.0, 1.0)
 
 
-func warmer_full() -> bool:
-	return float(stock.get("grilled", 0.0)) >= float(warmer_capacity())
+func warmer_full(fid: String) -> bool:
+	return stock_at(fid, "grilled") >= float(warmer_capacity())
+
+
+## Mọi khu đang mở đều hết chỗ chứa sườn — lúc đó lò than mới nghỉ tay.
+func warmers_full() -> bool:
+	for f in FLOORS:
+		var fid := str(f["id"])
+		if is_floor_unlocked(fid) and not warmer_full(fid):
+			return false
+	return true
 
 
 ## ---------------- Hai cái kho của quán ----------------
@@ -807,14 +860,22 @@ func store_cap_base(kind: String, id: String) -> int:
 
 
 ## Cả quán trữ được bao nhiêu món `id`: phần có sẵn cộng mọi cái tủ/kệ của mọi khu.
-func item_capacity(id: String) -> int:
+## Khu `fid` trữ được bao nhiêu món `id`: nền của khu cộng với mấy cái tủ/kệ khu
+## đó đã mua. Kho tách theo khu nên khu nào cũng có nền riêng, còn khu chưa mở
+## thì chưa có lấy một chỗ.
+func item_capacity(id: String, fid: String) -> int:
 	var kind := storage_of(id)
-	if kind.is_empty():
+	if kind.is_empty() or not is_floor_unlocked(fid):
 		return 0
-	var cap := store_cap_base(kind, id)
+	var here := store_count(kind, fid) * store_slot(kind, id, store_level(kind, fid))
+	return store_cap_base(kind, id) + here
+
+
+## Cả quán cộng lại trữ được bao nhiêu món đó — chỉ để khoe con số tổng.
+func item_capacity_all(id: String) -> int:
+	var cap := 0
 	for f in FLOORS:
-		var fid := str(f["id"])
-		cap += store_count(kind, fid) * store_slot(kind, id, store_level(kind, fid))
+		cap += item_capacity(id, str(f["id"]))
 	return cap
 
 
@@ -893,14 +954,41 @@ func upgrade_store(kind: String, fid: String) -> bool:
 	return true
 
 
-## Trần kho của một món. Món không thuộc kho nào thì chất bao nhiêu cũng được.
-func stock_cap(id: String) -> float:
-	return float(item_capacity(id)) if is_stored(id) else INF
+## Khu `fid` đang có bao nhiêu món `id`.
+func stock_at(fid: String, id: String) -> float:
+	var room = stock.get(fid, null)
+	if typeof(room) != TYPE_DICTIONARY:
+		return 0.0
+	return float((room as Dictionary).get(id, 0.0))
 
 
-## Còn nhét thêm được bao nhiêu món `id` nữa.
-func stock_room(id: String) -> float:
-	return maxf(0.0, stock_cap(id) - float(stock.get(id, 0.0)))
+## Cả quán cộng lại có bao nhiêu món đó — chỉ dùng cho chỗ hiển thị chung.
+func stock_total(id: String) -> float:
+	var n := 0.0
+	for f in FLOORS:
+		n += stock_at(str(f["id"]), id)
+	return n
+
+
+## Cộng món `id` vào kho khu `fid` (`n` âm là trừ ra), không cho tụt xuống dưới 0.
+func add_stock(fid: String, id: String, n: float) -> void:
+	if typeof(stock.get(fid, null)) != TYPE_DICTIONARY:
+		stock[fid] = {}
+	var room: Dictionary = stock[fid]
+	room[id] = maxf(0.0, float(room.get(id, 0.0)) + n)
+
+
+## Trần kho của một món ở một khu. Sườn nướng thì lò giữ nhiệt của khu đó chặn,
+## bán thành phẩm khác do kho quầy lo (xem station_keep), còn lại chất thoải mái.
+func stock_cap(id: String, fid: String) -> float:
+	if id == "grilled":
+		return float(warmer_capacity())
+	return float(item_capacity(id, fid)) if is_stored(id) else INF
+
+
+## Khu `fid` còn nhét thêm được bao nhiêu món `id` nữa.
+func stock_room(id: String, fid: String) -> float:
+	return maxf(0.0, stock_cap(id, fid) - stock_at(fid, id))
 
 
 ## Mấy cái tên cũ, giữ lại cho chỗ khác khỏi phải sửa: tủ lạnh chính là kho "fridge".
@@ -975,7 +1063,7 @@ func station_full(id: String) -> bool:
 	var out := str(station_def(id).get("out", ""))
 	if out.is_empty():
 		return true
-	return float(stock.get(out, 0.0)) >= float(station_keep(id))
+	return stock_at(station_floor(id), out) >= float(station_keep(id))
 
 
 # ---------------- Menu: mấy món thật sự bán ra tiền ----------------
@@ -1028,20 +1116,32 @@ func dish_open(did: String) -> bool:
 	return false
 
 
-## Quầy này còn mở và còn hàng để bán không — dùng cho chỗ hiển thị.
-func dish_ready(did: String) -> bool:
+## Bếp khu `fid` có đủ hàng ghép ra suất này không — dùng cho chỗ hiển thị.
+func dish_ready(did: String, fid: String) -> bool:
 	var needs: Dictionary = MENU[did]["needs"]
 	for it in needs:
-		if float(stock.get(it, 0.0)) < float(needs[it]):
+		if stock_at(fid, str(it)) < float(needs[it]):
 			return false
 	return true
 
 
-## Mấy món đang bưng ra được ở `where` ("street"/"aircon"/"rooftop"/"ship").
-func menu_ready(where: String) -> Array:
+## Món này khu nào cũng chưa ghép nổi một suất — dùng cho mấy chỗ báo hết hàng
+## chung cho cả quán.
+func dish_ready_anywhere(did: String) -> bool:
+	for f in FLOORS:
+		var fid := str(f["id"])
+		if is_floor_unlocked(fid) and dish_ready(did, fid):
+			return true
+	return false
+
+
+## Mấy món đang bưng ra được ở `where` ("street"/"aircon"/"rooftop"/"ship"), lấy
+## hàng từ kho khu `fid`. Người bưng khu nào thì `fid` là khu đó; shipper cũng
+## vậy, hộp cơm giao đi lấy ngay tại khu shipper đứng chờ.
+func menu_ready(where: String, fid: String) -> Array:
 	var out: Array = []
 	for did in MENU:
-		if dish_sold_at(str(did), where) and dish_ready(str(did)):
+		if dish_sold_at(str(did), where) and dish_ready(str(did), fid):
 			out.append(str(did))
 	return out
 
@@ -1049,8 +1149,8 @@ func menu_ready(where: String) -> Array:
 ## Nhận một đơn: bốc một món còn hàng ở `where` rồi TRỪ NGAY bán thành phẩm
 ## (toàn số nguyên). Trả về id món, hoặc chuỗi rỗng nếu bếp không còn gì để bưng.
 ## Món mắc thì ít người gọi hơn — đó là chỗ giá bán ăn vào lượng khách.
-func take_order(where: String) -> String:
-	var picks: Array = menu_ready(where)
+func take_order(where: String, fid: String) -> String:
+	var picks: Array = menu_ready(where, fid)
 	if picks.is_empty():
 		return ""
 	var total := 0.0
@@ -1065,7 +1165,7 @@ func take_order(where: String) -> String:
 			break
 	var needs: Dictionary = MENU[chosen]["needs"]
 	for it in needs:
-		stock[it] = maxf(0.0, float(stock.get(it, 0.0)) - float(int(needs[it])))
+		add_stock(fid, str(it), -float(int(needs[it])))
 	stock_changed.emit()
 	return chosen
 
@@ -1387,28 +1487,43 @@ func floor_salary(fid: String) -> float:
 ## Trừ `amount` nguyên liệu `ing` ra khỏi kho. Công thức ghi số lẻ được, nhưng
 ## kho thì luôn là số nguyên: chỗ lẻ cộng dồn vào `ing_debt`, đủ một đơn vị mới
 ## rút một đơn vị ra. Ghi 0.5 kg gạo một dĩa thì cứ hai dĩa mới vơi một ký.
-func _use_ingredient(ing: String, amount: float) -> void:
+func _use_ingredient(fid: String, ing: String, amount: float) -> void:
 	if amount <= 0.0:
 		return
-	var owed := float(ing_debt.get(ing, 0.0)) + amount
+	if typeof(ing_debt.get(fid, null)) != TYPE_DICTIONARY:
+		ing_debt[fid] = {}
+	var owed_row: Dictionary = ing_debt[fid]
+	var owed := float(owed_row.get(ing, 0.0)) + amount
 	var take := floorf(owed)
-	ing_debt[ing] = owed - take
+	owed_row[ing] = owed - take
 	if take > 0.0:
-		stock[ing] = maxf(0.0, float(stock.get(ing, 0.0)) - take)
+		add_stock(fid, ing, -take)
 
 
+## Quầy này còn đủ nguyên liệu trong kho KHU CỦA NÓ để chạy `times` phần không.
 func has_ingredients(id: String, times: int = 1) -> bool:
+	var fid := station_floor(id)
 	var recipe: Dictionary = station_def(id)["recipe"]
 	for ing in recipe:
-		if float(stock.get(ing, 0.0)) < float(recipe[ing]) * times:
+		if stock_at(fid, str(ing)) < float(recipe[ing]) * times:
 			return false
 	return true
 
 
-func missing_ingredients() -> Array:
+## Có khu nào đang cạn sạch món gì không — mất uy tín cuối ngày vì chuyện này.
+func any_missing_ingredients() -> bool:
+	for f in FLOORS:
+		var fid := str(f["id"])
+		if is_floor_unlocked(fid) and not missing_ingredients(fid).is_empty():
+			return true
+	return false
+
+
+## Khu này đang cạn sạch mấy món nào.
+func missing_ingredients(fid: String) -> Array:
 	var out: Array = []
 	for ing in shop_ingredients():
-		if float(stock.get(ing, 0.0)) <= 0.0:
+		if stock_at(fid, str(ing)) <= 0.0:
 			out.append(ing)
 	return out
 
@@ -1427,11 +1542,20 @@ func _process(delta: float) -> void:
 	if _tick_grill(d):
 		dirty_stock = true
 
-	# Khu nào cũng có dãy quầy của mình, mỗi cái chạy mẻ riêng theo cấp riêng —
-	# nhưng nguyên liệu lấy ra và phần làm xong thì đổ chung một kho.
+	# Quản lý không đi chợ mỗi khung hình — cứ vài giây ngó kho một lần cho đỡ
+	# nặng máy và cho nhật ký khỏi ngập chữ "nhập hàng".
+	_restock_timer += d
+	if _restock_timer >= MGR_BUY_EVERY:
+		_restock_timer = 0.0
+		_auto_restock()
+
+	# Khu nào cũng có dãy quầy của mình, mỗi cái chạy mẻ riêng theo cấp riêng, và
+	# giờ thì ăn nguyên liệu kho khu mình rồi chất phần làm ra cũng vào kho khu
+	# mình luôn — bếp khu này hết gạo thì khu kia vẫn nấu ngon lành.
 	for id in all_station_ids():
 		if not is_station_open(id):
 			continue
+		var fid := station_floor(id)
 		# Lò nướng thịt không nấu gì: nó chỉ giữ nhiệt cho sườn của lò than.
 		var out := str(station_def(id).get("out", ""))
 		if out.is_empty():
@@ -1439,38 +1563,39 @@ func _process(delta: float) -> void:
 		# Quầy chất đầy kho rồi thì đứng nghỉ, nấu ra nữa cũng không có chỗ để.
 		if station_full(id):
 			progress[id] = 0.0
-			pending_portions[id] = float(stock.get(out, 0.0))
+			pending_portions[id] = stock_at(fid, out)
 			continue
 		var batch := station_batch(id)
 		# Chỉ chạy khi còn nguyên liệu
 		if progress[id] <= 0.0 and not has_ingredients(id, 1):
-			pending_portions[id] = float(stock.get(out, 0.0))
+			pending_portions[id] = stock_at(fid, out)
 			continue
 		progress[id] = float(progress[id]) + d / station_cycle(id)
 		if float(progress[id]) >= 1.0:
 			progress[id] = 0.0
 			# Mẻ chỉ ra tới lúc kho quầy đầy, và mỗi phần trừ đúng số ghi trong công
 			# thức — số lẻ thì cộng dồn cho tới lúc đủ một đơn vị (xem _use_ingredient).
-			var room := station_keep(id) - int(stock.get(out, 0.0))
+			var room := station_keep(id) - int(stock_at(fid, out))
 			var made := 0
 			for i in mini(batch, maxi(room, 0)):
 				if not has_ingredients(id, 1):
 					break
 				var recipe: Dictionary = station_def(id)["recipe"]
 				for ing in recipe:
-					_use_ingredient(str(ing), float(recipe[ing]))
+					_use_ingredient(fid, str(ing), float(recipe[ing]))
 				made += 1
 			if made > 0:
-				stock[out] = float(stock.get(out, 0.0)) + float(made)
+				add_stock(fid, out, float(made))
 				dirty_stock = true
 			else:
-				_log("Hết nguyên liệu cho " + str(station_def(id)["name"]))
-		pending_portions[id] = float(stock.get(out, 0.0))
+				_log("Hết nguyên liệu cho %s %s" % [str(station_def(id)["name"]).to_lower(), str(floor_data(fid)["name"]).to_lower()])
+		pending_portions[id] = stock_at(fid, out)
 
-	# Lò nướng thịt là cái lò giữ nhiệt: con số "phần chờ" của nó là số miếng
-	# sườn đang nằm trong khay — khay dùng chung nên khu nào cũng ghi số đó.
+	# Lò nướng thịt là cái lò giữ nhiệt: con số "phần chờ" của nó là số miếng sườn
+	# đang nằm trong khay của chính khu đó.
 	for f in FLOORS:
-		pending_portions[station_key("grill", str(f["id"]))] = float(stock.get("grilled", 0.0))
+		var wf := str(f["id"])
+		pending_portions[station_key("grill", wf)] = stock_at(wf, "grilled")
 
 	if dirty_stock:
 		stock_changed.emit()
@@ -1524,7 +1649,7 @@ func _end_day() -> void:
 		reputation = minf(100.0, reputation + 3.0)
 	elif served_today < 12:
 		reputation = maxf(0.0, reputation - 4.0)
-	if not missing_ingredients().is_empty():
+	if any_missing_ingredients():
 		reputation = maxf(0.0, reputation - 2.0)
 	day += 1
 	served_today = 0
@@ -1546,15 +1671,32 @@ func _tick_grill(d: float) -> bool:
 	if grill_progress < 1.0:
 		return false
 	grill_progress = 0.0
+	var gf := grill_floor()
 	var batch := grill_batch()
-	stock["pork"] = float(stock.get("pork", 0.0)) - float(batch)
-	stock["coal"] = float(stock.get("coal", 0.0)) - GRILL_COAL
-	# bưng vào lò giữ nhiệt; lò chật thì phần dư đành bỏ lại trên vỉ
-	var room := float(warmer_capacity()) - float(stock.get("grilled", 0.0))
-	var kept := int(minf(float(batch), maxf(room, 0.0)))
-	stock["grilled"] = float(stock.get("grilled", 0.0)) + float(kept)
+	add_stock(gf, "pork", -float(batch))
+	add_stock(gf, "coal", -GRILL_COAL)
+	# Lò than chỉ có một cái ngoài vỉa hè mà khu nào cũng cần sườn, nên nướng
+	# xong thì chia vòng tròn vào lò giữ nhiệt của mấy khu đang mở: mỗi lượt một
+	# miếng cho khu còn chỗ. Hết chỗ cả quán thì phần dư đành bỏ lại trên vỉ.
+	var takers: Array = []
+	for f in FLOORS:
+		if is_floor_unlocked(str(f["id"])):
+			takers.append(str(f["id"]))
+	var kept := 0
+	while kept < batch:
+		var moved := false
+		for t in takers:
+			if kept >= batch:
+				break
+			if warmer_full(str(t)):
+				continue
+			add_stock(str(t), "grilled", 1.0)
+			kept += 1
+			moved = true
+		if not moved:
+			break
 	grill_batch_ready.emit(kept)
-	_log("Nướng xong %d miếng sườn, xếp vào lò giữ nhiệt" % kept)
+	_log("Nướng xong %d miếng sườn, chia vào lò giữ nhiệt các khu" % kept)
 	return true
 
 
@@ -1670,6 +1812,69 @@ func boost_grill() -> bool:
 	return true
 
 
+# ---------------- Quản lý tự đi chợ ----------------
+
+## Quầy này phải lo nhập mấy món nào. Bình thường là đúng mấy thứ trong công thức
+## của nó, mà chỉ tính món mua ngoài chợ được (bán thành phẩm thì tự nấu).
+func station_supplies(id: String) -> Array:
+	var out: Array = []
+	var recipe: Dictionary = station_def(id)["recipe"]
+	for ing in recipe:
+		if INGREDIENTS.has(ing) and bool(INGREDIENTS[ing].get("shop", true)):
+			out.append(str(ing))
+	# Quầy "Lò nướng thịt" đại diện cho cả dây sườn nướng, mà than với sườn sống
+	# thì đốt ngoài lò than vỉa hè — nên chỉ quản lý ở đúng khu có lò mới đi chợ
+	# mua hai món đó, quản lý khu trên chỉ trông cái khay giữ nhiệt.
+	if station_base(id) == "grill" and station_floor(id) == grill_floor():
+		out.append("pork")
+		out.append("coal")
+	return out
+
+
+## Quản lý tự đi chợ: quầy nào có người trông thì nguyên liệu của quầy đó không
+## được để cạn. Thấy tụt xuống dưới ngưỡng là nhập một phát cho ĐẦY trần kho của
+## khu đó, miễn là ví đủ tiền; thiếu tiền thì nhập được bao nhiêu hay bấy nhiêu,
+## cạn túi hẳn thì thôi, cứ để quầy báo hết hàng như thường.
+func _auto_restock() -> void:
+	_quiet_begin()
+	for f in FLOORS:
+		var fid := str(f["id"])
+		if not is_floor_unlocked(fid):
+			continue
+		for sid in stations_on_floor(fid):
+			if not has_manager(str(sid)):
+				continue
+			for ing in station_supplies(str(sid)):
+				_manager_buy(fid, str(ing))
+	_quiet_end()
+
+
+func _manager_buy(fid: String, ing: String) -> void:
+	var cap := float(item_capacity(ing, fid))
+	if cap <= 0.0:
+		return
+	var have := stock_at(fid, ing)
+	if have > cap * MGR_BUY_AT:
+		return
+	var need := int(cap - have)
+	if need <= 0:
+		return
+	var price := maxf(float(INGREDIENTS[ing]["price"]), 1.0)
+	# Chừa lại một khoản trong ví cho người chơi còn tiền nâng cấp, mở khu —
+	# chỉnh bằng chung.manager_buy_reserve trong balance.json (mặc định 0).
+	var purse := maxf(money - MGR_BUY_RESERVE, 0.0)
+	var qty: int = need
+	if price * float(need) > purse:
+		qty = int(purse / price)
+	if qty <= 0:
+		return
+	if not _spend(price * float(qty)):
+		return
+	add_stock(fid, ing, float(qty))
+	_emit_stock()
+	_log("Quản lý %s nhập %d %s %s" % [str(floor_data(fid)["name"]).to_lower(), qty, str(INGREDIENTS[ing]["unit"]), str(INGREDIENTS[ing]["name"]).to_lower()])
+
+
 # ---------------- Thu nhập khi vắng mặt ----------------
 
 ## Tính tiền kiếm được trong lúc người chơi không mở game.
@@ -1688,36 +1893,46 @@ func _apply_offline(seconds: float) -> void:
 	if not watched:
 		return
 	var span := minf(seconds, OFFLINE_MAX_SECONDS)
-	# Bếp nấu được bao nhiêu phần mỗi loại trong quãng vắng mặt đó.
+	# Bếp nấu được bao nhiêu phần mỗi loại trong quãng vắng mặt đó — kho tách theo
+	# khu nên quầy nào cũng chỉ đụng tới nguyên liệu của khu mình.
 	for id in all_station_ids():
 		if not is_station_open(str(id)) or not has_manager(str(id)):
 			continue
 		var out := str(station_def(str(id)).get("out", ""))
 		if out.is_empty():
 			continue
+		var sfid := station_floor(str(id))
 		var made := int(span / station_cycle(str(id)) * OFFLINE_RATE * float(station_batch(str(id))))
 		var recipe: Dictionary = station_def(str(id))["recipe"]
 		for ing in recipe:
 			var per := float(recipe[ing])
 			if per > 0.0:
-				made = mini(made, int(float(stock.get(ing, 0.0)) / per))
+				made = mini(made, int(stock_at(sfid, str(ing)) / per))
 		if made <= 0:
 			continue
 		for ing in recipe:
-			_use_ingredient(str(ing), float(recipe[ing]) * float(made))
-		stock[out] = float(stock.get(out, 0.0)) + float(made)
-	# Khách ghé trong quãng đó ăn hết chừng nào thì thu chừng đó.
+			_use_ingredient(sfid, str(ing), float(recipe[ing]) * float(made))
+		add_stock(sfid, out, float(made))
+	# Khách ghé trong quãng đó ăn hết chừng nào thì thu chừng đó. Mỗi khu bán món
+	# của khu mình bằng hàng của khu mình; khu nào có shipper thì thêm một dòng
+	# hộp cơm giao đi, cũng lấy hàng ngay tại khu đó.
 	var guests := int(span * arrival_rate() / 60.0 * OFFLINE_RATE)
 	var total := 0
 	var portions := 0
 	var wheres: Array = []
 	for f in FLOORS:
-		if is_floor_unlocked(str(f["id"])):
-			wheres.append(str(f["id"]))
-	wheres.append("ship")
+		var ofid := str(f["id"])
+		if not is_floor_unlocked(ofid):
+			continue
+		wheres.append({"where": ofid, "fid": ofid})
+		if staff_count(ofid, "shipper") > 0:
+			wheres.append({"where": "ship", "fid": ofid})
+	if wheres.is_empty():
+		return
 	var dry := 0
 	for i in guests:
-		var did := take_order(str(wheres[i % wheres.size()]))
+		var slot: Dictionary = wheres[i % wheres.size()]
+		var did := take_order(str(slot["where"]), str(slot["fid"]))
 		if did.is_empty():
 			# cả bếp lẫn menu đều sạch trơn thì có chờ thêm cũng vậy, nghỉ sớm
 			dry += 1
@@ -1761,26 +1976,32 @@ func _spend(cost: float) -> bool:
 	return true
 
 
-func buy_ingredient(id: String, packs: int = 1) -> bool:
+## Nhập hàng về kho của MỘT khu. Kho tách theo khu rồi nên mua gì cũng phải nói
+## rõ mua cho khu nào; bỏ trống thì mặc định là khu vỉa hè.
+func buy_ingredient(id: String, packs: int = 1, fid: String = "") -> bool:
+	if fid.is_empty():
+		fid = str(FLOORS[0]["id"])
+	if not is_floor_unlocked(fid):
+		return false
 	var qty := int(INGREDIENTS[id]["pack"]) * packs
 	# Món nào cũng có trần kho: kho chật thì cắt bớt cho vừa, tiền cũng chỉ trả
 	# đúng phần nhét vô được — nhập dư rồi đổ đi thì phí của.
 	if is_stored(id):
-		qty = mini(qty, int(stock_room(id)))
+		qty = mini(qty, int(stock_room(id, fid)))
 		if qty <= 0:
 			return false
 	var cost := float(INGREDIENTS[id]["price"]) * qty
 	if not _spend(cost):
 		return false
-	stock[id] = float(stock.get(id, 0.0)) + qty
-	stock_changed.emit()
-	_log("Nhập %d %s %s" % [qty, str(INGREDIENTS[id]["unit"]), str(INGREDIENTS[id]["name"]).to_lower()])
+	add_stock(fid, id, float(qty))
+	_emit_stock()
+	_log("Nhập %d %s %s cho %s" % [qty, str(INGREDIENTS[id]["unit"]), str(INGREDIENTS[id]["name"]).to_lower(), str(floor_data(fid)["name"]).to_lower()])
 	return true
 
 
-## Nhập nhanh nên nhập tới đâu: đầy đúng trần kho của món đó.
-func stock_target(id: String) -> float:
-	return float(item_capacity(id)) if is_stored(id) else 0.0
+## Nhập nhanh nên nhập tới đâu: đầy đúng trần kho của món đó ở khu đó.
+func stock_target(id: String, fid: String) -> float:
+	return float(item_capacity(id, fid)) if is_stored(id) else 0.0
 
 
 ## Đi một vòng chợ nhập cho đầy kho. Món nào đã đầy thì bỏ qua chứ không làm
@@ -1789,11 +2010,14 @@ func stock_target(id: String) -> float:
 ## Nhập xoay vòng mỗi lượt một lố, món cạn nhất đi trước, để tiền chia đều cho
 ## mọi món chứ không dồn hết vào món đầu tiên. Hết tiền thì dừng.
 ## Trả về số loại thực sự nhập được.
-func buy_all_low(_threshold: float = 0.0) -> int:
+func buy_all_low(fid: String) -> int:
+	if not is_floor_unlocked(fid):
+		return 0
+	_quiet_begin()
 	var order: Array = shop_ingredients()
 	order.sort_custom(func(a, b) -> bool:
-		var ra: float = float(stock.get(a, 0.0)) / maxf(stock_target(str(a)), 1.0)
-		var rb: float = float(stock.get(b, 0.0)) / maxf(stock_target(str(b)), 1.0)
+		var ra: float = stock_at(fid, str(a)) / maxf(stock_target(str(a), fid), 1.0)
+		var rb: float = stock_at(fid, str(b)) / maxf(stock_target(str(b), fid), 1.0)
 		return ra < rb)
 
 	var bought: Dictionary = {}
@@ -1805,15 +2029,26 @@ func buy_all_low(_threshold: float = 0.0) -> int:
 			var pack := int(INGREDIENTS[sid]["pack"])
 			if pack <= 0:
 				continue
-			if float(stock.get(sid, 0.0)) >= stock_target(sid):
+			if stock_at(fid, sid) >= stock_target(sid, fid):
 				continue
 			if money < float(INGREDIENTS[sid]["price"]) * float(pack):
 				continue
-			if not buy_ingredient(sid, 1):
+			if not buy_ingredient(sid, 1, fid):
 				continue
 			bought[sid] = true
 			again = true
+	_quiet_end()
 	return bought.size()
+
+
+## Nhập một lượt cho cả ba khu, khỏi phải bấm qua bấm lại từng khu.
+func buy_all_low_everywhere() -> int:
+	_quiet_begin()
+	var n := 0
+	for f in FLOORS:
+		n += buy_all_low(str(f["id"]))
+	_quiet_end()
+	return n
 
 
 ## Thuê thêm một người cho khu `fid` — khu nào trả lương khu nấy, khu chưa mở
@@ -2004,6 +2239,23 @@ func suggest_all_prices() -> void:
 	state_changed.emit()
 
 
+## Báo "kho vừa đổi" — trừ lúc đang mua cả loạt thì im, để _quiet_end() phát một
+## lần cho cả loạt.
+func _emit_stock() -> void:
+	if _stock_quiet <= 0:
+		stock_changed.emit()
+
+
+func _quiet_begin() -> void:
+	_stock_quiet += 1
+
+
+func _quiet_end() -> void:
+	_stock_quiet = maxi(_stock_quiet - 1, 0)
+	if _stock_quiet == 0:
+		stock_changed.emit()
+
+
 func _log(msg: String) -> void:
 	logs.append(msg)
 	if logs.size() > 40:
@@ -2054,11 +2306,28 @@ func load_game() -> bool:
 	day_time = float(data.get("day_time", 0.0))
 	reputation = float(data.get("reputation", reputation))
 	auto_open = bool(data.get("auto_open", true))
+	# Save đời cũ ghi phẳng {món: số lượng} vì hồi đó cả quán chung một cái kho.
+	# Gặp kiểu đó thì dồn hết về khu đầu, coi như hàng đang chất ngoài vỉa hè —
+	# không mất món nào, mấy khu trên bắt đầu với kho trống.
 	var d_stock = data.get("stock", {})
 	if typeof(d_stock) == TYPE_DICTIONARY:
-		for id in INGREDIENTS:
-			# kho luôn là số nguyên: save đời cũ có phần lẻ thì gọt đi
-			stock[id] = float(int(float(d_stock.get(id, stock.get(id, 0.0)))))
+		var flat_stock := false
+		for sk in d_stock:
+			if typeof(d_stock[sk]) != TYPE_DICTIONARY:
+				flat_stock = true
+				break
+		for sf in FLOORS:
+			var sfid := str(sf["id"])
+			var ssrc: Dictionary = {}
+			if flat_stock:
+				ssrc = d_stock if sfid == str(FLOORS[0]["id"]) else {}
+			elif typeof(d_stock.get(sfid, null)) == TYPE_DICTIONARY:
+				ssrc = d_stock[sfid]
+			var sroom: Dictionary = {}
+			for id in INGREDIENTS:
+				# kho luôn là số nguyên: save đời cũ có phần lẻ thì gọt đi
+				sroom[id] = float(int(float(ssrc.get(id, 0.0))))
+			stock[sfid] = sroom
 	var d_prices = data.get("prices", {})
 	if typeof(d_prices) == TYPE_DICTIONARY:
 		for did in MENU:
@@ -2174,7 +2443,9 @@ func load_game() -> bool:
 	# Ván cũ lưu trước khi lò giữ nhiệt có sức chứa thì sườn nướng có thể đang
 	# nhiều hơn cả cái lò: gạt phần dư đi một lần cho khớp luật mới.
 	if not data.has("warmer_level"):
-		stock["grilled"] = minf(float(stock.get("grilled", 0.0)), float(warmer_capacity()))
+		for wf in FLOORS:
+			var wfid := str(wf["id"])
+			add_stock(wfid, "grilled", minf(0.0, float(warmer_capacity()) - stock_at(wfid, "grilled")))
 	var d_floors = data.get("floors", {})
 	if typeof(d_floors) == TYPE_DICTIONARY:
 		for fl in FLOORS:
@@ -2183,10 +2454,24 @@ func load_game() -> bool:
 	var d_debt = data.get("ing_debt", {})
 	if typeof(d_debt) == TYPE_DICTIONARY:
 		ing_debt.clear()
-		for id in INGREDIENTS:
-			var owed := float((d_debt as Dictionary).get(id, 0.0))
-			if owed > 0.0:
-				ing_debt[id] = clampf(owed, 0.0, 1.0)
+		var flat_debt := false
+		for dk in d_debt:
+			if typeof(d_debt[dk]) != TYPE_DICTIONARY:
+				flat_debt = true
+				break
+		for df in FLOORS:
+			var dfid := str(df["id"])
+			var dsrc: Dictionary = {}
+			if flat_debt:
+				dsrc = d_debt if dfid == str(FLOORS[0]["id"]) else {}
+			elif typeof(d_debt.get(dfid, null)) == TYPE_DICTIONARY:
+				dsrc = d_debt[dfid]
+			var drow: Dictionary = {}
+			for id in INGREDIENTS:
+				var owed := float(dsrc.get(id, 0.0))
+				if owed > 0.0:
+					drow[id] = clampf(owed, 0.0, 1.0)
+			ing_debt[dfid] = drow
 	var d_stats = data.get("stats", {})
 	if typeof(d_stats) == TYPE_DICTIONARY:
 		for k in stats:
@@ -2197,9 +2482,16 @@ func load_game() -> bool:
 			claimed[m["id"]] = bool(d_claimed.get(m["id"], false))
 	# Ván cũ lưu hồi kho còn vô hạn thì có món đang nhiều hơn cả cái kho: gạt phần
 	# dư cho khớp luật mới, coi như để lâu quá phải bỏ.
-	for cid in INGREDIENTS:
-		if is_stored(str(cid)):
-			stock[cid] = minf(float(stock.get(cid, 0.0)), float(item_capacity(str(cid))))
+	for cf in FLOORS:
+		var cfid := str(cf["id"])
+		for cid in INGREDIENTS:
+			var cap := INF
+			if is_stored(str(cid)):
+				cap = float(item_capacity(str(cid), cfid))
+			elif str(cid) == "grilled":
+				cap = float(warmer_capacity())
+			if stock_at(cfid, str(cid)) > cap:
+				add_stock(cfid, str(cid), cap - stock_at(cfid, str(cid)))
 	last_seen = float(data.get("last_seen", Time.get_unix_time_from_system()))
 	money_changed.emit()
 	stock_changed.emit()
