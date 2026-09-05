@@ -33,7 +33,10 @@
 		"  cứ manager_buy_every giây ngó một lần. Thiếu tiền thì nhập được bao nhiêu hay",
 		"  bấy nhiêu. manager_buy_reserve là khoản chừa lại trong ví, không cho quản lý",
 		"  tiêu tới — để 0 là quản lý tiêu tới đồng cuối cùng.",
-		"grill: lò than vỉa hè. warmer: lò giữ nhiệt trong quầy.",
+		"grill: xe lò than ngoài vỉa hè — KHU NÀO CŨNG CÓ MỘT CÁI RIÊNG, đốt than và",
+		"  sườn sống của kho khu đó rồi xếp sườn nướng vào lò giữ nhiệt của chính khu đó.",
+		"  warmer: lò giữ nhiệt trong quầy. Cấp của cả hai cái lò tính riêng từng khu,",
+		"  mấy con số dưới đây là bảng chung cho mọi khu.",
 		"KHO: quán có hai kho, mỗi khu tự mua tủ/kệ của khu mình rồi nâng cấp riêng,",
 		"  nhưng chỗ trữ thì góp chung. fridge = kho lạnh (sườn · bì · chả · đá bi),",
 		"  pantry = kho đồ khô (gạo · trà · than · gas). Trong mỗi mục:",
@@ -462,7 +465,7 @@
 		"_ghi_chu": "cap_base = trữ được chừng này khi CHƯA có tủ nào. slot.<món>[k-1] = một cái tủ CẤP k trữ thêm chừng đó. Tổng = cap_base + cộng dồn mọi tủ của mọi khu.",
 		"cost": 600000,
 		"cost_mult": 1.7,
-		"max": 3,
+		"max": 2,
 		"up_cost": 180000,
 		"up_mult": 1.55,
 		"up_costs": [
@@ -630,33 +633,41 @@
 		}
 	},
 	"decor": {
+		"_ghi_chu": "max = mỗi KHU bày được nhiều nhất mấy món loại này. Đủ rồi thì nút trong game đổi thành 'ĐỦ RỒI'.",
 		"plant": {
 			"cost": 120000,
-			"amb": 2
+			"amb": 2,
+			"max": 2
 		},
 		"lantern": {
 			"cost": 200000,
-			"amb": 3
+			"amb": 3,
+			"max": 2
 		},
 		"sign": {
 			"cost": 450000,
-			"amb": 5
+			"amb": 5,
+			"max": 1
 		},
 		"fan": {
 			"cost": 300000,
-			"amb": 3
+			"amb": 3,
+			"max": 2
 		},
 		"table": {
 			"cost": 380000,
-			"seats": 2
+			"seats": 2,
+			"max": 2
 		},
 		"aquarium": {
 			"cost": 900000,
-			"amb": 8
+			"amb": 8,
+			"max": 1
 		},
 		"dog": {
 			"cost": 260000,
-			"amb": 4
+			"amb": 4,
+			"max": 1
 		}
 	},
 	"furniture": {

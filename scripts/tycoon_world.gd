@@ -5,7 +5,7 @@ extends Node3D
 
 signal station_tapped(id: String)
 signal floor_tapped(fid: String)
-signal grill_tapped
+signal grill_tapped(fid: String)
 signal focus_changed(index: int)
 signal collected(amount: float)
 signal boosted(id: String)
@@ -25,6 +25,12 @@ const WING_DX := ROOM_W + WING_GAP
 # Lò than vỉa hè: đặt nép mé trong, chừa nguyên khoảng vỉa hè cho khách kê bàn.
 const GRILL_POS := Vector3(-3.25, 0.0, ROOM_D * 0.5 + 0.95)
 const GRILL_MEATS := 6             # số miếng thịt bày trên vỉ cho vui mắt
+## Anh đứng lò nghỉ tay bưng khay ít nhất chừng này giây giữa hai chuyến. Mỗi
+## chuyến vào quầy rồi quay ra mất hơn hai chục giây, mà mẻ nào cũng bưng thì
+## anh ta đi tới đi lui suốt ngày, chẳng bao giờ thấy đứng lò lật sườn. Sườn đã
+## vào kho ngay lúc mẻ chín rồi, chuyến bưng chỉ để coi cho có hồn — nên cứ dồn
+## vài mẻ đi một chuyến, còn lại đứng quạt than.
+const GRILL_TRIP_GAP := 50.0
 const WARM_SLOTS := 18             # số ô sườn bày được trong lò giữ nhiệt
 const COOK_STAND := 0.35           # bục gỗ kê chân người đứng bếp sau quầy
 
@@ -159,7 +165,9 @@ var _dragging := false
 var _drag_moved := 0.0
 var _floats: Array = []
 var _meters: Array = []            # mọi vòng đếm giờ đang có trong cảnh
-var _grill: Dictionary = {}        # các bộ phận của lò than để cập nhật mỗi khung hình
+## Khu nào cũng có xe lò than của mình ngoài vỉa hè, nên đây là một mục cho mỗi
+## khu: _grills[chỉ số khu] = các bộ phận của lò đó để cập nhật mỗi khung hình.
+var _grills: Dictionary = {}
 var _decor_bits: Array = []        # quạt + bảng hiệu LED: mấy món trang trí biết cựa quậy
 var _reported_floor := -1
 var _multi := false                 # đang có từ hai ngón trở lên chạm màn hình
@@ -427,7 +435,7 @@ func rebuild() -> void:
     _blockers.clear()
     _solids.clear()
     _meters.clear()
-    _grill.clear()
+    _grills.clear()
     _decor_bits.clear()
 
     for i in GameManager.FLOORS.size():
@@ -573,17 +581,18 @@ func _build_floor(node: Node3D, fid: String, index: int) -> void:
     # cả dãy quầy bếp (và mọi thứ bày trên đó) là một khối liền, không ai chui qua
     _solid(index, 0, -hd + 1.15, (ROOM_W - 0.5) * 0.5, 0.58)
 
-    # vỉa hè trước quán chạy suốt cả dãy; riêng khu trệt mới có lò than + bảng hiệu
-    _build_terrace(node, accent, index == 0)
+    # vỉa hè trước quán chạy suốt cả dãy; khu nào cũng có xe lò than của mình,
+    # riêng cái bảng hiệu thì chỉ dựng một cái ở đầu dãy
+    _build_terrace(node, accent, index)
+    _solid(index, GRILL_POS.x, GRILL_POS.z, 0.84, 0.34)          # xe lò than
     if index == 0:
-        _solid(index, GRILL_POS.x, GRILL_POS.z, 0.84, 0.34)      # xe lò than
         _solid(index, -hw - 0.75, hd + 1.7, 0.24, 0.24)          # cột bảng hiệu
     _solid(index, hw - 0.05, hd + 0.95, 0.38, 0.38)              # lu nước đầu hè
 
     # Quầy hàng. Bốn cái quầy là bếp CHUNG của cả quán (chung kho, chung tiến độ),
     # nhưng khu nào cũng phải có dãy quầy của mình — không thì mặt quầy trống trơn
-    # mà người bưng thì đứng lấy đĩa giữa không khí. Nên dựng đủ ở mọi khu, chỉ có
-    # lò than vỉa hè là độc nhất một cái ngoài hiên khu trệt.
+    # mà người bưng thì đứng lấy đĩa giữa không khí. Lò than vỉa hè cũng vậy: khu
+    # nào cũng có một cái ngoài hiên của mình.
     var sids := GameManager.stations_on_floor(fid)
     for i in sids.size():
         _build_station(node, str(sids[i]), _station_slot(i, sids.size()), index)
@@ -617,7 +626,8 @@ func _emissive(node: MeshInstance3D, c: Color, power: float) -> void:
 
 ## Xe lò than: thùng tôn trên chân sắt, lòng đầy than đỏ, vỉ nướng bắc ngang,
 ## mấy miếng sườn nằm trên vỉ và khói bốc lên nghi ngút phía trước.
-func _build_grill_stall(t: Node3D, accent: Color) -> void:
+func _build_grill_stall(t: Node3D, accent: Color, index: int) -> void:
+    var fid := str(GameManager.FLOORS[index]["id"])
     var g := Node3D.new()
     g.name = "GrillStall"
     g.position = GRILL_POS
@@ -696,11 +706,12 @@ func _build_grill_stall(t: Node3D, accent: Color) -> void:
     _box(g, 0.3, 0.1, 0.24, C_STEEL_DARK, -0.95, 0.46, 0.1, 0.8)
     _label3d(g, "SƯỜN NƯỚNG", 22, accent, 0, 1.62, 0)
 
-    var area := _touch_area(g, "grill", "grill", Vector3(0, 0.9, 0), Vector3(2.0, 1.9, 1.5))
+    # chạm vào lò nào thì mở bảng của đúng lò khu đó
+    var area := _touch_area(g, "grill", fid, Vector3(0, 0.9, 0), Vector3(2.0, 1.9, 1.5))
     area.collision_layer = 1
 
-    _grill = {"node": g, "meats": meats, "flames": flames, "embers": embers,
-        "smoke": smoke, "glow": glow, "flip": 0.0, "away": false}
+    _grills[index] = {"node": g, "meats": meats, "flames": flames, "embers": embers,
+        "smoke": smoke, "glow": glow, "flip": 0.0, "away": false, "fid": fid}
 
 
 ## Nhịp sống của lò: than phập phồng, lửa nhấp nháy, khói bay lên và thịt đổi màu
@@ -710,11 +721,19 @@ func _build_grill_stall(t: Node3D, accent: Color) -> void:
 ## hết sườn sống chỉ làm cái vỉ trống trơn chứ không dập được bếp. Hết than mới
 ## là lò tắt: than xám lại, tắt lửa, tắt khói.
 func _update_grill(dt: float) -> void:
+    for key in _grills:
+        var one: Dictionary = _grills[key]
+        _update_one_grill(one, dt)
+
+
+## Nhịp sống của MỘT cái lò, mọi con số hỏi theo khu của chính nó.
+func _update_one_grill(_grill: Dictionary, dt: float) -> void:
     if _grill.is_empty() or not is_instance_valid(_grill["node"] as Node3D):
         return
-    var lit := GameManager.grill_lit()
-    var on := GameManager.grill_running()
-    var prog := clampf(GameManager.grill_progress, 0.0, 1.0)
+    var fid := str(_grill["fid"])
+    var lit := GameManager.grill_lit(fid)
+    var on := GameManager.grill_running(fid)
+    var prog := GameManager.grill_prog(fid)
     var beat := 0.5 + 0.5 * sin(_time * 3.1)
 
     for e in _grill["embers"]:
@@ -788,7 +807,7 @@ func _update_grill(dt: float) -> void:
 
 ## Anh Tư đứng lò: mặc định lật sườn tại chỗ, hễ xong một mẻ thì bưng khay
 ## thịt qua cửa vào quầy trong quán rồi quay trở ra lò.
-func _build_griller(node: Node3D) -> void:
+func _build_griller(node: Node3D, index: int) -> void:
     var stand := GRILL_POS + Vector3(0.0, 0.0, -0.62)
     stand.y = OUT_Y
     var ch := ComTamChars.build("tu")
@@ -809,9 +828,10 @@ func _build_griller(node: Node3D) -> void:
         _box(tray, 0.09, 0.05, 0.2, C_MEAT_DONE, -0.11 + float(i) * 0.11, 0.045, 0, 0.55)
     tray.visible = false
 
-    _actors.append({"node": ch, "rig": rig, "mode": "griller", "floor": 0,
+    _actors.append({"node": ch, "rig": rig, "mode": "griller", "floor": index,
         "state": "grill", "t": 0.0, "phase": randf() * 2.0, "tray": tray,
-        "home": stand, "path": [], "y": OUT_Y, "carry": 0})
+        "home": stand, "path": [], "y": OUT_Y, "carry": 0,
+        "rest": GRILL_TRIP_GAP})
 
 
 ## Đường bưng khay từ lò than vào quầy trong quán rồi quay ra.
@@ -829,25 +849,32 @@ func _grill_route(back: bool) -> Array:
 
 func _update_griller(a: Dictionary, node: Node3D, rig: Dictionary, t: float, delta: float) -> void:
     var tray: Node3D = a["tray"]
+    var index := int(a["floor"])
+    var fid := str(GameManager.FLOORS[index]["id"])
     a["t"] = float(a["t"]) + delta
-    if not _grill.is_empty():
-        _grill["away"] = str(a["state"]) != "grill"
+    # anh này bưng khay đi thì vỉ lò CỦA KHU NÀY trống, lò khu khác vẫn đầy thịt
+    var mine: Dictionary = _grills.get(index, {})
+    if not mine.is_empty():
+        mine["away"] = str(a["state"]) != "grill"
 
     match str(a["state"]):
         "grill":
             tray.visible = false
             node.rotation.y = 0.0
-            if GameManager.grill_running():
+            if GameManager.grill_running(fid):
                 ComTamChars.grill_flip(rig, t)
             else:
                 ComTamChars.idle(rig, t)     # hết than hoặc hết sườn thì đứng chơi
-            if int(a["carry"]) > 0:
+            # Dồn mấy mẻ đi một chuyến: mẻ nào cũng bưng thì anh ta kẹt luôn ở
+            # ngoài đường, mẻ sau chín lúc chuyến trước còn chưa về tới lò.
+            a["rest"] = float(a.get("rest", 0.0)) + delta
+            if int(a["carry"]) > 0 and float(a["rest"]) >= GRILL_TRIP_GAP:
                 a["state"] = "carry_in"
                 a["path"] = _grill_route(false)
                 a["t"] = 0.0
         "carry_in":
             tray.visible = true
-            if _follow_path(a, node, rig, t, delta, 1.5):
+            if _follow_path(a, node, rig, t, delta, 2.0):
                 a["state"] = "drop"
                 a["t"] = 0.0
                 node.rotation.y = PI
@@ -857,8 +884,8 @@ func _update_griller(a: Dictionary, node: Node3D, rig: Dictionary, t: float, del
             # đặt khay sườn xuống quầy
             ComTamChars.idle(rig, t)
             rig["torso"].rotation.x = 0.2
-            tray.visible = float(a["t"]) < 0.6
-            if float(a["t"]) > 1.2:
+            tray.visible = float(a["t"]) < 0.5
+            if float(a["t"]) > 0.9:
                 rig["torso"].rotation.x = 0.0
                 a["carry"] = 0
                 a["state"] = "carry_back"
@@ -866,9 +893,10 @@ func _update_griller(a: Dictionary, node: Node3D, rig: Dictionary, t: float, del
                 a["t"] = 0.0
         "carry_back":
             tray.visible = false
-            if _follow_path(a, node, rig, t, delta, 1.6):
+            if _follow_path(a, node, rig, t, delta, 2.1):
                 a["state"] = "grill"
                 a["t"] = 0.0
+                a["rest"] = 0.0          # về tới lò rồi, đứng nướng một hồi đã
                 node.position = a["home"]
                 node.rotation.y = 0.0
 
@@ -876,19 +904,26 @@ func _update_griller(a: Dictionary, node: Node3D, rig: Dictionary, t: float, del
 
 
 ## Mẻ nướng xong: cho người đứng lò bưng vào và bắn con số lên cho thấy.
-func _on_grill_batch(count: int) -> void:
+func _on_grill_batch(fid: String, count: int) -> void:
+    var index := GameManager.floor_index(fid)
+    # Khu đang ngoài tầm nhìn thì người của khu đó cũng đang nằm im (xem
+    # ACTOR_LOD_RANGE trong _update_actors): ghi chuyến bưng vào lúc này chỉ tổ
+    # dồn lại, để rồi vừa lia máy qua là thấy anh ta co giò chạy đi ngay.
+    if absf(float(index) - focus) > ACTOR_LOD_RANGE * maxf(1.0, zoom):
+        return
     for a in _actors:
-        if str(a["mode"]) == "griller":
+        if str(a["mode"]) == "griller" and int(a["floor"]) == index:
             a["carry"] = count
             break
-    var g = _grill.get("node")
+    var mine: Dictionary = _grills.get(index, {})
+    var g = mine.get("node")
     if g != null and is_instance_valid(g as Node3D):
         spawn_float("+%d miếng" % count, (g as Node3D).global_position + Vector3(0, 2.0, 0), C_HOT)
 
 
 # ---------- Vỉa hè trước quán: mái hiên, bậc thềm, tủ kính ----------
 
-func _build_terrace(node: Node3D, accent: Color, with_grill: bool = true) -> void:
+func _build_terrace(node: Node3D, accent: Color, index: int) -> void:
     var hw := ROOM_W * 0.5
     var hd := ROOM_D * 0.5
     var t := Node3D.new()
@@ -908,8 +943,8 @@ func _build_terrace(node: Node3D, accent: Color, with_grill: bool = true) -> voi
         _box(t, WING_DX - 0.1, 0.02, 0.03, C_FLOOR_LINE, 0, 0.085,
             hd + 0.5 + i * 0.9).material_override = line_mat
 
-    if with_grill:
-        _build_grill_stall(t, accent)
+    # khu nào cũng có xe lò than riêng ngoài hiên của mình
+    _build_grill_stall(t, accent, index)
 
     # bậc thềm bước lên nền quán
     _box(t, ROOM_W + 1.0, 0.4, 0.55, C_WALL_DEEP, 0, 0.2, hd + 0.28, 0.85)
@@ -917,7 +952,7 @@ func _build_terrace(node: Node3D, accent: Color, with_grill: bool = true) -> voi
 
     # Bảng hiệu chỉ dựng một cái ở đầu dãy (khu trệt), nép mé trái vỉa hè. Dựng
     # mỗi khu một cái thì cả dãy toàn cột, che mất lòng quán khi nhìn chúc xuống.
-    if with_grill:
+    if index == 0:
         var sg := Node3D.new()
         sg.position = Vector3(-hw - 0.75, 0, hd + 1.7)
         sg.rotation.y = 0.34
@@ -1881,14 +1916,15 @@ func _populate(node: Node3D, fid: String, index: int) -> void:
         if GameManager.is_station_open(sid):
             open_here.append({"sid": sid, "slot": i})
 
-    # người đứng lò than ngoài vỉa hè (chỉ tầng trệt, quầy nướng nằm ngoài đó)
+    # người đứng lò than ngoài vỉa hè: khu nào cũng có lò riêng nên khu nào cũng
+    # có anh đứng lò của mình, bưng sườn từ lò khu đó vào quầy khu đó
     var has_grill := false
     for e in open_here:
         var ent: Dictionary = e
         if GameManager.station_base(str(ent["sid"])) == "grill":
             has_grill = true
-    if index == 0 and has_grill:
-        _build_griller(node)
+    if has_grill:
+        _build_griller(node, index)
 
     # đầu bếp đứng sau quầy
     var cook_keys := ["hai", "bay", "tu", "minh"]
@@ -2059,7 +2095,7 @@ func _update_station(st: Dictionary, dt: float) -> void:
     # lò rộng hơn sức bày thì mỗi miếng đại diện cho vài miếng trong kho
     var warm: Array = st.get("warm", [])
     if not warm.is_empty():
-        var cap := GameManager.warmer_capacity()
+        var cap := GameManager.warmer_capacity(st_fid)
         var shown := mini(cap, WARM_SLOTS)
         var have := int(GameManager.stock_at(st_fid, "grilled"))
         var lit := 0
@@ -2722,6 +2758,12 @@ func _follow_path(a: Dictionary, node: Node3D, rig: Dictionary, t: float, delta:
     if not a.has("seg_to") or (a["seg_to"] as Vector3) != tgt:
         a["seg_to"] = tgt
         a["seg_from"] = node.position
+        a["seg_t"] = 0.0
+    # Chặng nào đi hoài không tới thì thôi né nữa, cứ nhắm thẳng mà bước: đích
+    # nằm lọt trong lòng cái bàn hay sát mép khối đặc thì người cứ lượn vòng
+    # quanh nó, nhìn y như đi qua đi lại chẳng vì cái gì.
+    a["seg_t"] = float(a.get("seg_t", 0.0)) + delta
+    var stuck := float(a["seg_t"]) > 5.0
     var seg_from: Vector3 = a["seg_from"]
     var seg_len := Vector2(tgt.x - seg_from.x, tgt.z - seg_from.z).length()
     var climbing := absf(tgt.y - seg_from.y) > 0.5 and seg_len > 0.05
@@ -2730,7 +2772,8 @@ func _follow_path(a: Dictionary, node: Node3D, rig: Dictionary, t: float, delta:
     else:
         ComTamChars.walk(rig, t, 8.0)
     a["y"] = tgt.y
-    var done := _step_toward(node, tgt, speed * (0.72 if climbing else 1.0), delta, a)
+    var done := _step_toward(node, tgt, speed * (0.72 if climbing else 1.0), delta,
+        {} if stuck else a)
     if seg_len > 0.05:
         # buoc toi dau thi cao toi do, chan moi bam dung mat bac
         var left := Vector2(tgt.x - node.position.x, tgt.z - node.position.z).length()
@@ -3231,7 +3274,7 @@ func _handle_tap(screen_pos: Vector2) -> void:
         "floor":
             floor_tapped.emit(id)
         "grill":
-            grill_tapped.emit()
+            grill_tapped.emit(id)
 
 
 func go_to_floor(index: int) -> void:

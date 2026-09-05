@@ -464,14 +464,14 @@ func _refresh_tags() -> void:
 	# miếng và lò đã chật chưa. Kho tách theo khu nên đây là khay của KHU ĐANG XEM.
 	var here := _view_floor()
 	var grilled := int(GameManager.stock_at(here, "grilled"))
-	var warm_cap := GameManager.warmer_capacity()
+	var warm_cap := GameManager.warmer_capacity(here)
 	var warm_col: Color = UIKit.NEON_GREEN
 	if grilled <= 0:
 		warm_col = UIKit.NEON_RED
 	elif grilled >= warm_cap:
 		warm_col = UIKit.WARN
 	items.append({"text": "%d/%d sườn nướng" % [grilled, warm_cap], "color": warm_col})
-	if int(GameManager.stock_at(GameManager.grill_floor(), "coal")) <= 0:
+	if int(GameManager.stock_at(here, "coal")) <= 0:
 		items.append({"text": "hết than!", "color": UIKit.NEON_RED})
 	var amb := GameManager.ambiance()
 	if amb > 0:
@@ -698,7 +698,7 @@ func _sync_strip() -> void:
 		# nguội, thanh đứng im tại chỗ cho tới khi nhập than về.
 		var prog := float(GameManager.progress.get(sid, 0.0))
 		if GameManager.station_base(str(sid)) == "grill":
-			prog = GameManager.grill_progress
+			prog = GameManager.grill_prog(GameManager.station_floor(str(sid)))
 		(r["bar"] as ProgressBar).value = prog * 100.0
 		var note: Label = r["note"]
 		var alert: Label = r["alert"]
@@ -724,7 +724,7 @@ func _sync_strip() -> void:
 				# lò giữ nhiệt: thứ đáng nhìn nhất là còn mấy miếng trong lò khu này
 				note.text = "%d/%d miếng trong lò" % [
 					int(GameManager.stock_at(GameManager.station_floor(str(sid)), "grilled")),
-					GameManager.warmer_capacity()]
+					GameManager.warmer_capacity(GameManager.station_floor(str(sid)))]
 			else:
 				# quầy không bán thẳng cho khách nữa: nó chất sẵn phần cơm / phần bì
 				# chả / ly trà đá trong kho, đầy kho là người đứng quầy nghỉ tay
@@ -747,13 +747,12 @@ func _restock_list(sid: String) -> Array:
 			continue
 		if GameManager.stock_at(fid, str(ing)) < float(recipe[ing]):
 			out.append(str(ing))
-	# Lò than chỉ có một cái ngoài vỉa hè, nên sườn sống với than luôn hỏi kho của
-	# khu đó — quầy lò khu trên chỉ giữ nhiệt, hết hàng cũng là tại lò dưới này.
+	# Khu nào cũng có lò than riêng ngoài hiên, nên sườn sống với than hỏi ngay
+	# kho của chính khu đó — hết là quầy lò của khu đó báo động.
 	if recipe.has("grilled"):
-		var gf := GameManager.grill_floor()
-		if GameManager.stock_at(gf, "pork") < float(GameManager.grill_batch()):
+		if GameManager.stock_at(fid, "pork") < float(GameManager.grill_batch(fid)):
 			out.append("pork")
-		if GameManager.stock_at(gf, "coal") < GameManager.GRILL_COAL and not out.has("coal"):
+		if GameManager.stock_at(fid, "coal") < GameManager.GRILL_COAL and not out.has("coal"):
 			out.append("coal")
 	return out
 
@@ -793,9 +792,9 @@ func _buy_chip(ing: String, fid: String) -> Button:
 		sb.content_margin_top = UIKit.px(1)
 		sb.content_margin_bottom = UIKit.px(1)
 	b.set_meta("ing", ing)
-	# Than với sườn sống thì nhập cho khu có lò than, mấy thứ còn lại nhập cho
-	# đúng khu của cái quầy đang thiếu.
-	var buy_at := GameManager.grill_floor() if ing in ["pork", "coal"] else fid
+	# Kho tách theo khu và lò than cũng vậy, nên món gì cũng nhập thẳng cho khu
+	# của cái quầy đang thiếu.
+	var buy_at := fid
 	b.set_meta("fid", buy_at)
 	# Kéo danh sách mà ngón đặt trúng nút thì nút vẫn nhận cú bấm, thành ra mua
 	# nhầm. Nhớ chỗ đặt ngón, nhả tay xa quá thì coi như chỉ cuộn.
@@ -1341,30 +1340,32 @@ func _grill_paths(sid: String) -> Control:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", int(UIKit.px(6)))
 
+	# Cả hai cái lò đều là của RIÊNG khu này: nâng lò khu máy lạnh thì lò vỉa hè
+	# vẫn cấp cũ, nên mọi con số dưới đây đều hỏi theo khu của cái quầy đang xem.
+	var fid := GameManager.station_floor(sid)
 	box.add_child(_path_row("flame",
-		"LÒ NƯỚNG THAN · C%d/%d" % [GameManager.grill_level, GameManager.MAX_LEVEL],
-		"Ngoài hiên · %d miếng mỗi mẻ %ds" % [
-			GameManager.grill_batch(), int(GameManager.GRILL_CYCLE)],
-		"NÂNG LÒ", -1.0 if GameManager.grill_at_max() else GameManager.grill_upgrade_cost(),
+		"LÒ NƯỚNG THAN · C%d/%d" % [GameManager.grill_level(fid), GameManager.MAX_LEVEL],
+		"Ngoài hiên khu này · %d miếng mỗi mẻ %ds" % [
+			GameManager.grill_batch(fid), int(GameManager.GRILL_CYCLE)],
+		"NÂNG LÒ", -1.0 if GameManager.grill_at_max(fid) else GameManager.grill_upgrade_cost(fid),
 		UIKit.WARN,
 		func():
-			if GameManager.upgrade_grill():
+			if GameManager.upgrade_grill(fid):
 				_toast("Lò than lên cấp %d — mỗi mẻ %d miếng" % [
-					GameManager.grill_level, GameManager.grill_batch()])
+					GameManager.grill_level(fid), GameManager.grill_batch(fid)])
 				_show_station_card(sid, "upgrade")))
 
-	# khay giữ nhiệt là của riêng khu này, còn cấp lò thì nâng chung cả quán
-	var have := int(GameManager.stock_at(GameManager.station_floor(sid), "grilled"))
-	var cap := GameManager.warmer_capacity()
+	var have := int(GameManager.stock_at(fid, "grilled"))
+	var cap := GameManager.warmer_capacity(fid)
 	box.add_child(_path_row("bowl",
-		"LÒ GIỮ NHIỆT · C%d/%d" % [GameManager.warmer_level, GameManager.MAX_LEVEL],
+		"LÒ GIỮ NHIỆT · C%d/%d" % [GameManager.warmer_level(fid), GameManager.MAX_LEVEL],
 		"Trong quầy · đang giữ %d/%d miếng" % [have, cap],
-		"NỚI LÒ", -1.0 if GameManager.warmer_at_max() else GameManager.warmer_upgrade_cost(),
+		"NỚI LÒ", -1.0 if GameManager.warmer_at_max(fid) else GameManager.warmer_upgrade_cost(fid),
 		UIKit.NEON_GREEN,
 		func():
-			if GameManager.upgrade_warmer():
+			if GameManager.upgrade_warmer(fid):
 				_toast("Lò giữ nhiệt lên cấp %d — chứa được %d miếng" % [
-					GameManager.warmer_level, GameManager.warmer_capacity()])
+					GameManager.warmer_level(fid), GameManager.warmer_capacity(fid)])
 				_show_station_card(sid, "upgrade")))
 
 	var bar_c: Color = UIKit.WARN if have >= cap else UIKit.NEON_GREEN
@@ -1437,64 +1438,67 @@ func _manager_card(sid: String) -> Control:
 
 
 ## Thẻ lò than vỉa hè: xem mẻ đang nướng, còn bao nhiêu than và nâng cấp lò.
-func _show_grill_card() -> void:
+func _show_grill_card(fid: String = "") -> void:
+	if fid.is_empty() or not GameManager.is_floor_unlocked(fid):
+		fid = _view_floor()
+	var fname := str(GameManager.floor_data(fid)["name"])
 	var v := _card_shell()
-	v.add_child(UIKit.heading("LÒ THAN VỈA HÈ", 19, UIKit.ACCENT_900))
-	v.add_child(UIKit.muted("Nướng sẵn sườn cho quầy trong quán. Mỗi mẻ đốt hết một bao than.", 12))
+	v.add_child(UIKit.heading("LÒ THAN " + fname.to_upper(), 19, UIKit.ACCENT_900))
+	v.add_child(UIKit.muted("Lò riêng của khu này: đốt than và sườn sống của kho khu này, nướng xong xếp thẳng vào lò giữ nhiệt của khu này.", 12))
 	v.add_child(UIKit.separator())
 
 	var grid := GridContainer.new()
 	grid.columns = 2
 	grid.add_theme_constant_override("h_separation", 12)
 	v.add_child(grid)
-	_kv(grid, "Cấp lò", "C%d/%d" % [GameManager.grill_level, GameManager.MAX_LEVEL])
-	_kv(grid, "Mỗi mẻ", "%d miếng" % GameManager.grill_batch())
+	_kv(grid, "Cấp lò", "C%d/%d" % [GameManager.grill_level(fid), GameManager.MAX_LEVEL])
+	_kv(grid, "Mỗi mẻ", "%d miếng" % GameManager.grill_batch(fid))
 	_kv(grid, "Một mẻ mất", "%d giây" % int(GameManager.GRILL_CYCLE))
-	var gf := GameManager.grill_floor()
-	_kv(grid, "Sườn sống", "%d miếng" % int(GameManager.stock_at(gf, "pork")))
-	_kv(grid, "Than đá", "%d bao" % int(GameManager.stock_at(gf, "coal")))
-	_kv(grid, "Sườn nướng cả quán", "%d miếng" % int(GameManager.stock_total("grilled")))
+	_kv(grid, "Sườn sống", "%d miếng" % int(GameManager.stock_at(fid, "pork")))
+	_kv(grid, "Than đá", "%d bao" % int(GameManager.stock_at(fid, "coal")))
+	_kv(grid, "Sườn nướng khu này", "%d/%d miếng" % [
+		int(GameManager.stock_at(fid, "grilled")), GameManager.warmer_capacity(fid)])
 
-	var bar := UIKit.bar(GameManager.grill_progress * 100.0, UIKit.WARN, 8)
+	var bar := UIKit.bar(GameManager.grill_prog(fid) * 100.0, UIKit.WARN, 8)
 	v.add_child(bar)
-	if GameManager.grill_running():
+	if GameManager.grill_running(fid):
 		v.add_child(UIKit.tag("Lò đang đỏ lửa", UIKit.OK, Color(0.31, 0.54, 0.36, 0.14)))
 	else:
 		# lò không chạy vì ba lẽ khác nhau, và "còn than mà hết sườn" thì than vẫn
 		# đỏ chứ lò không tắt — nói cho đúng chuyện đang xảy ra
-		var why := "Hết than đá — vào Mua sắm nhập thêm"
-		if GameManager.warmers_full():
-			why = "Lò giữ nhiệt khu nào cũng đầy — bán bớt hoặc nới lò cho rộng chỗ"
-		elif GameManager.grill_lit():
+		var why := "Hết than đá — vào Mua sắm nhập thêm cho khu này"
+		if GameManager.warmer_full(fid):
+			why = "Lò giữ nhiệt khu này đã đầy — bán bớt hoặc nới lò cho rộng chỗ"
+		elif GameManager.grill_lit(fid):
 			why = "Than vẫn đỏ nhưng hết sườn sống — vào Mua sắm nhập thêm"
 		v.add_child(UIKit.tag(why, UIKit.BAD, Color(0.71, 0.33, 0.25, 0.12)))
 
 	# Thúc mẻ: trả tiền cho vỉ sườn đang nướng chín ngay, khỏi đứng quạt than.
 	# Lò đang nghỉ (hết than, hết sườn, lò giữ nhiệt đầy) thì chẳng có mẻ nào để thúc.
-	var bcost := GameManager.grill_boost_cost()
+	var bcost := GameManager.grill_boost_cost(fid)
 	var quick := UIKit.button_primary("THÚC MẺ · %s ₫" % UIKit.money(float(bcost)), 13)
 	quick.custom_minimum_size = Vector2(0, 62)
-	quick.disabled = not GameManager.can_boost_grill()
+	quick.disabled = not GameManager.can_boost_grill(fid)
 	quick.pressed.connect(func():
-		if GameManager.boost_grill():
+		if GameManager.boost_grill(fid):
 			_toast("Quạt lửa cho mau chín!")
-			_show_grill_card()
+			_show_grill_card(fid)
 		else:
 			_toast("Lò đang nghỉ, chưa có mẻ nào để thúc"))
 	v.add_child(quick)
 
-	var cost := GameManager.grill_upgrade_cost()
-	var grill_maxed := GameManager.grill_at_max()
+	var cost := GameManager.grill_upgrade_cost(fid)
+	var grill_maxed := GameManager.grill_at_max(fid)
 	var up := UIKit.button_primary("LÒ ĐÃ KỊCH CẤP %d" % GameManager.MAX_LEVEL if grill_maxed
 		else "NÂNG LÒ · +%d miếng/mẻ · %s ₫" % [
 			GameManager.GRILL_BATCH_STEP, UIKit.money(cost)], 13)
 	up.custom_minimum_size = Vector2(0, 76)
 	up.disabled = grill_maxed or not GameManager.can_afford(cost)
 	up.pressed.connect(func():
-		if GameManager.upgrade_grill():
-			_toast("Lò than lên cấp %d — mỗi mẻ %d miếng" % [
-				GameManager.grill_level, GameManager.grill_batch()])
-			_show_grill_card())
+		if GameManager.upgrade_grill(fid):
+			_toast("Lò than %s lên cấp %d — mỗi mẻ %d miếng" % [
+				fname.to_lower(), GameManager.grill_level(fid), GameManager.grill_batch(fid)])
+			_show_grill_card(fid))
 	v.add_child(up)
 
 	var close := UIKit.button_ghost("ĐÓNG", 12)

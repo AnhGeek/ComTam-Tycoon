@@ -28,8 +28,8 @@ chắc chắn không có lỗi runtime trong vòng đời của khách.
 Mọi con số cân bằng nằm ở đây, sửa xong chạy `./install.sh` là ra APK mới, **không
 phải đụng vào code**: giá bán từng món trong menu, giá nâng cấp từng quầy, công thức nguyên liệu,
 giá nguyên liệu, sức chứa từng món của hai cái kho, giá mở khu, lò than, lò giữ
-nhiệt, lương nhân viên, giá trang
-trí/bàn ghế, thưởng nhiệm vụ, và mấy hệ số chung (tiền vốn, độ dài một ngày, độ
+nhiệt, lương nhân viên, giá **và số lượng tối đa mỗi khu** của đồ trang
+trí, giá bàn ghế, thưởng nhiệm vụ, và mấy hệ số chung (tiền vốn, độ dài một ngày, độ
 kiên nhẫn của khách, hệ số nâng cấp mỗi cấp).
 
 **Giá từng cấp:** mỗi thứ nâng cấp được (mọi quầy, lò than, lò giữ nhiệt) có mảng
@@ -61,7 +61,7 @@ boost_cost(quầy) = stations.<quầy>.boost_cost        (giá lúc quầy còn 
 Nhân với phần còn lại nên thúc sớm trả trọn, thúc lúc mẻ gần xong thì gần như
 không mất gì — trả đúng khúc được rút ngắn. Giá cấp 1: nồi cơm 20.000 ₫ · bàn bì
 chả 10.000 ₫ · trà đá 1.500 ₫ · lò than vỉa hè 50.000 ₫ (`grill.boost_cost`,
-tính theo `grill_level`), chừng 30% giá trị một mẻ nên thúc vẫn lời.
+tính theo `grill_level(fid)` của khu đó), chừng 30% giá trị một mẻ nên thúc vẫn lời.
 
 `boost_cost = 0` nghĩa là **quầy đó không thúc được**, và bảng của nó cũng không
 mọc ra nút nấu nhanh: **lò nướng thịt** để 0 vì nó chỉ giữ nhiệt cho sườn của lò
@@ -96,7 +96,7 @@ bưng ra bàn và là chỗ duy nhất có giá bán.
 | Bàn bì & chả (`prep`) | bì heo + chả trứng | `bicha` — phần bì chả |
 | Quầy trà đá (`drink`) | đá bi + trà | `trada` — ly trà đá |
 | Lò nướng thịt (`grill`) | — | không làm ra gì, chỉ **giữ nhiệt** `grilled` |
-| Lò than vỉa hè | than + sườn sống | `grilled` — miếng sườn nướng |
+| Lò than vỉa hè (mỗi khu một cái) | than + sườn sống | `grilled` — miếng sườn nướng |
 
 Sáu món trong `MENU`: cơm tấm sườn (`com`+`grilled`) · cơm tấm bì chả
 (`com`+`bicha`) · trà đá (`trada`) · cơm tấm thập cẩm và cơm hộp giao đi
@@ -120,9 +120,9 @@ Không còn chỗ nào bán theo phần lẻ: mọi nguyên liệu, mọi suất
 **Khu nào lo khu nấy — kho cũng vậy.** Cấp quầy, tiến độ mẻ, quản lý, **và cả
 kho hàng** đều là của riêng từng khu: nâng nồi cơm khu máy lạnh không làm nồi cơm
 vỉa hè chạy nhanh hơn, bếp khu nào ăn gạo khu đó và phần cơm nấu ra cũng nằm lại
-khu đó. Khu nào cũng dựng đủ dãy quầy lẫn người đứng bếp của mình. Riêng **lò than
-vỉa hè** (`_build_griller`) vẫn độc nhất một cái ngoài hiên khu trệt, nên ở khu
-trên quầy `grill` (lò giữ nhiệt) có người đứng như quầy thường.
+khu đó. Khu nào cũng dựng đủ dãy quầy lẫn người đứng bếp của mình — **kể cả xe lò
+than ngoài hiên và anh đứng lò bưng sườn vào** (`_build_grill_stall` +
+`_build_griller` dựng cho mọi khu đã mở).
 
 Cách ghi: mọi thứ tính theo quầy — `levels` · `progress` · `managers` · `pending` ·
 `pending_portions` — dùng **khoá ghép `"<quầy>@<khu>"`**, ví dụ `"rice@aircon"`.
@@ -173,14 +173,11 @@ nào đọc thẳng `GameManager.stock` nữa, hỏi qua mấy hàm này:
 lại khu đó, người bưng của khu đó mới lấy được; shipper cũng lấy hộp cơm ngay tại
 khu mình đứng (`take_order("ship", fid)`).
 
-**Sườn nướng là ngoại lệ.** Lò than chỉ có một cái ngoài vỉa hè (`grill_floor()`),
-ăn than + sườn sống của **kho khu trệt**. Nướng xong thì `_tick_grill` **chia vòng
-tròn** vào lò giữ nhiệt của mọi khu đang mở, mỗi lượt một miếng cho khu còn chỗ —
-không vậy thì hai khu trên mất 4 trong 6 món của menu. Vì thế:
-
-- `warmer_fill(fid)` / `warmer_full(fid)` hỏi **một khu**; `warmers_full()` (mọi
-  khu đều chật) mới là cái làm lò than nghỉ tay.
-- `warmer_level` vẫn nâng chung cả quán — nâng một lần là khay khu nào cũng rộng ra.
+**Sườn nướng cũng theo khu.** Khu nào cũng có xe lò than của mình ngoài hiên
+(`has_grill(fid)` · `grill_floors()`), ăn than + sườn sống của **kho khu đó**,
+nướng xong `_tick_grill` xếp thẳng vào lò giữ nhiệt của **chính khu đó** — không
+chia chác qua lại giữa các khu nữa. Khay khu nào đầy thì lò khu đó nghỉ tay
+(`warmer_full(fid)`), lò khu khác vẫn đỏ lửa.
 
 Save đời cũ ghi `stock`/`ing_debt` phẳng thì lúc load **dồn hết về khu vỉa hè**, y
 như cách `staff` và `decor` đã làm; hai khu trên bắt đầu với kho trống.
@@ -196,8 +193,8 @@ quản lý đụng tới (mặc định 0 — quản lý tiêu tới đồng cu�
 để dành mở khu).
 
 Quầy nào mua món nào thì `station_supplies(id)` quyết định: mặc định là đúng mấy
-thứ mua ngoài chợ trong `recipe` của nó, riêng quầy `grill` **ở đúng khu có lò
-than** thì mua thêm sườn sống + than. Nhờ mỗi nguyên liệu chỉ nằm trong công thức
+thứ mua ngoài chợ trong `recipe` của nó, riêng quầy `grill` thì mua thêm sườn
+sống + than cho cái lò ngoài hiên khu mình (khu nào cũng có lò nên khu nào cũng mua). Nhờ mỗi nguyên liệu chỉ nằm trong công thức
 của một tên quầy nên không có chuyện hai quầy giành nhau một món.
 
 Ngoài chuyện đi chợ, quản lý vẫn là thứ **mở khoá thu nhập lúc vắng mặt** cho quầy
@@ -292,19 +289,48 @@ View và world chỉ đọc rồi vẽ. Thêm tính năng thì đặt số liệ
 Hai cái "lò" là hai thứ khác nhau, đừng lẫn:
 
 - **Lò nướng than** (ngoài hiên, `_build_griller` + `GameManager._tick_grill`) mới là
-  chỗ nướng thật: ăn **than + sườn sống**, mỗi mẻ ra `grill_batch()` miếng. Nâng cấp
-  ở đây = mỗi mẻ nhiều miếng hơn (`grill_level`).
+  chỗ nướng thật: ăn **than + sườn sống**, mỗi mẻ ra `grill_batch(fid)` miếng. Nâng cấp
+  ở đây = mỗi mẻ nhiều miếng hơn (`grill_level(fid)`).
 - **Lò giữ nhiệt** (khay trên quầy, `_build_warmer`) **chỉ chứa** sườn đã nướng để
   lúc nào cũng có miếng sẵn phục vụ khách. Nâng cấp ở đây = trữ được nhiều miếng
-  hơn (`warmer_level`, `warmer_capacity()`).
+  hơn (`warmer_level(fid)`, `warmer_capacity(fid)`).
+
+**Cả hai cái lò đều là của riêng từng khu.** Cấp lò than, cấp lò giữ nhiệt và mẻ
+đang nướng đều ghi theo khu — `grill_levels[fid]` · `warmer_levels[fid]` ·
+`grill_progress[fid]` — và mọi hàm đều nhận `fid`: `grill_level` · `grill_batch` ·
+`grill_running` · `grill_lit` · `grill_prog` · `grill_upgrade_cost` · `upgrade_grill` ·
+`grill_boost_cost` · `can_boost_grill` · `boost_grill` · `warmer_level` ·
+`warmer_capacity` · `warmer_upgrade_cost` · `upgrade_warmer` · `warmer_fill` ·
+`warmer_full`. Nâng lò khu máy lạnh không làm lò vỉa hè ra thêm miếng nào. Save đời
+cũ ghi `grill_level`/`warmer_level` trần thì lúc load dồn về khu vỉa hè, hai khu
+trên bắt đầu lại từ cấp 1.
+
+Bên `tycoon_world`, `_grills` là **một mục cho mỗi khu** (khoá là chỉ số khu), và
+mỗi khu có một anh đứng lò riêng (`_actors` với `mode = "griller"`, `floor` = chỉ
+số khu) bưng khay sườn từ lò khu đó vào quầy khu đó. Tín hiệu
+`grill_batch_ready(fid, count)` và `grill_tapped(fid)` đều mang theo khu.
+
+**Anh đứng lò dồn mấy mẻ đi một chuyến** (`GRILL_TRIP_GAP`, 50 giây). Một chuyến
+vào quầy rồi quay ra mất hơn hai chục giây mà mẻ thì 24 giây một cái, nên hồi mẻ
+nào cũng bưng thì anh ta đi tới đi lui suốt, chẳng bao giờ đứng lò lật sườn được
+— trông y như không về tới lò. Sườn đã vào kho ngay lúc mẻ chín (`_tick_grill`),
+chuyến bưng chỉ để coi cho có hồn nên dồn lại thoải mái. Khu đang ngoài tầm nhìn
+(`ACTOR_LOD_RANGE`) thì `_on_grill_batch` bỏ qua luôn, không thì người của khu đó
+nằm im tích chuyến, vừa lia máy quay qua là thấy co giò chạy đi ngay.
+
+Kèm theo đó `_follow_path` có **lưới an toàn chung cho mọi người**: một chặng đi
+quá 5 giây chưa tới thì thôi né đồ đạc, nhắm thẳng đích mà bước. Đích nằm lọt
+trong lòng khối đặc (chỗ đứng của anh đứng lò nằm trong dải bị `_seal_solids` bịt
+sau xe lò than chẳng hạn) thì `_steer` cứ lượn vòng quanh hoài — nhìn đúng kiểu đi
+qua đi lại chẳng vì cái gì.
 
 Hai luật quan trọng:
 
-1. **Còn than là lửa còn** — `grill_lit()` chỉ hỏi than. Hết sườn sống thì cái vỉ
-   trống trơn nhưng than vẫn đỏ, lửa vẫn cháy, khói vẫn bay. Chỉ `grill_running()`
+1. **Còn than là lửa còn** — `grill_lit(fid)` chỉ hỏi than. Hết sườn sống thì cái vỉ
+   trống trơn nhưng than vẫn đỏ, lửa vẫn cháy, khói vẫn bay. Chỉ `grill_running(fid)`
    (đang nướng một mẻ) mới cần đủ cả than lẫn sườn.
-2. **Sức chứa lò giữ nhiệt là trần của `stock["grilled"]`** — lò đầy thì
-   `grill_running()` false, lò than ngoài hiên nghỉ tay.
+2. **Sức chứa lò giữ nhiệt là trần của `stock[fid]["grilled"]`** — khay khu nào đầy
+   thì `grill_running(fid)` false, lò ngoài hiên khu đó nghỉ tay.
 
 Quầy `grill` trong danh sách quầy tên là **"Lò nướng thịt"** — nó đại diện cho cả
 dây sườn nướng, nên khi hết than/sườn thì chính nó báo động (bốn quầy có thể báo
@@ -324,6 +350,12 @@ Trong `GameManager`, `staff` và `decor` đều là `floor_id -> {id -> số lư
 Tra cứu qua `staff_count(fid, id)` · `staff_total(id)` · `floor_crew(fid)` ·
 `floor_salary(fid)` · `hire_cost(id, fid)`, thuê bằng `hire_staff(id, fid)`.
 `STAFF[id]["max"]` và `["cost"]` tính cho **mỗi khu**, không phải cả quán.
+
+**Trang trí cũng có trần mỗi khu:** `DECOR[id]["max"]` (chỉnh ở `decor.<id>.max`
+trong `balance.json`) nói một khu bày được nhiều nhất mấy món loại đó — 1 hoặc 2
+tuỳ món. Hỏi qua `decor_max(id)` và `decor_left(fid, id)`; `buy_decor()` chặn
+**trước khi trừ tiền**, thẻ trong màn Mua sắm luôn ghi "khu này 1/2" và đổi nút
+thành "ĐỦ RỒI" khi đầy. Save đời cũ mua lố thì lúc load bị cắt bớt cho khớp trần.
 
 **Chỉ còn hai loại nhân viên, mỗi khu nhiều nhất 2 người mỗi loại** — mà **1
 người là có sẵn lúc mở khu**, nên chỉ thuê thêm được đúng 1 người nữa:

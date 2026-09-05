@@ -17,7 +17,7 @@ signal missions_changed
 ## TycoonWorld DỰNG LẠI toàn bộ quán, mà khách bỏ về thì xảy ra liên tục.
 signal reputation_changed
 ## Xong một mẻ nướng: sân khấu 3D cho người đứng lò bưng thịt vào trong quán.
-signal grill_batch_ready(count: int)
+signal grill_batch_ready(fid: String, count: int)
 
 const SAVE_PATH := "user://com_tam_save.json"
 const BALANCE_PATH := "res://data/balance.json"   # bảng số chỉnh tay, xem _load_balance()
@@ -210,17 +210,20 @@ static var STAFF := {
 	"shipper": {"name": "Shipper", "desc": "+6% khách tới khu này, chạy giao cơm suốt ngày", "cost": 350000, "salary": 25000, "max": 2, "free": 1},
 }
 
+## Trang trí — mỗi khu bày được tối đa "max" món mỗi loại (chỉnh trong
+## data/balance.json). Quán nhỏ, kê hai cái bảng hiệu hay nuôi ba con chó thì
+## chật chội mà cũng chẳng ai dựng thêm được, nên mỗi loại chỉ 1–2 món một khu.
 static var DECOR := {
-	"plant": {"name": "Chậu cây xanh", "desc": "+2 điểm không khí", "cost": 120000, "amb": 2},
-	"lantern": {"name": "Đèn lồng", "desc": "+3 điểm không khí", "cost": 200000, "amb": 3},
-	"sign": {"name": "Bảng hiệu đèn LED", "desc": "+5 điểm không khí, khách tới nhanh", "cost": 450000, "amb": 5},
-	"fan": {"name": "Quạt máy đứng", "desc": "+3 điểm không khí, quạt đảo mát cả quán", "cost": 300000, "amb": 3},
-	"table": {"name": "Bộ bàn ghế inox", "desc": "+2 chỗ ngồi", "cost": 380000, "seats": 2},
-	"aquarium": {"name": "Bể cá cảnh", "desc": "+8 điểm không khí", "cost": 900000, "amb": 8},
+	"plant": {"name": "Chậu cây xanh", "desc": "+2 điểm không khí", "cost": 120000, "amb": 2, "max": 2},
+	"lantern": {"name": "Đèn lồng", "desc": "+3 điểm không khí", "cost": 200000, "amb": 3, "max": 2},
+	"sign": {"name": "Bảng hiệu đèn LED", "desc": "+5 điểm không khí, khách tới nhanh", "cost": 450000, "amb": 5, "max": 1},
+	"fan": {"name": "Quạt máy đứng", "desc": "+3 điểm không khí, quạt đảo mát cả quán", "cost": 300000, "amb": 3, "max": 2},
+	"table": {"name": "Bộ bàn ghế inox", "desc": "+2 chỗ ngồi", "cost": 380000, "seats": 2, "max": 2},
+	"aquarium": {"name": "Bể cá cảnh", "desc": "+8 điểm không khí", "cost": 900000, "amb": 8, "max": 1},
 	## Chó cỏ chạy lăng quăng trong quán: không giúp bán được thêm phần cơm nào,
 	## chỉ để quán có hồn — nên điểm không khí vừa phải mà giá thì rẻ.
 	"dog": {"name": "Chó cỏ giữ quán", "desc": "+4 điểm không khí, chạy lăng quăng",
-		"cost": 260000, "amb": 4},
+		"cost": 260000, "amb": 4, "max": 1},
 }
 
 ## Bàn ghế mua rời rồi tự tay đặt vào quán.
@@ -278,8 +281,8 @@ var auto_open := true          # quán tự chạy ngày mới
 ## của riêng mỗi khu: bếp khu nào ăn nguyên liệu khu đó, phần làm ra nằm lại khu
 ## đó, người bưng của khu đó mới lấy được.
 ##   stock[floor_id][item_id] = khu đó đang có bao nhiêu món đó
-## Ngoại lệ duy nhất là sườn nướng: lò than chỉ có một cái ngoài vỉa hè, nướng
-## xong thì chia vào lò giữ nhiệt của mấy khu đang mở (xem _tick_grill).
+## Sườn nướng cũng vậy: khu nào cũng có xe lò than của mình ngoài vỉa hè, nướng
+## xong thì bỏ thẳng vào lò giữ nhiệt của chính khu đó (xem _tick_grill).
 var stock: Dictionary = {}          # floor_id -> {item_id -> số lượng}
 var prices: Dictionary = {}         # station_id -> giá bán
 var levels: Dictionary = {}         # station_id -> cấp (0 = chưa mở)
@@ -305,9 +308,16 @@ var store_levels: Dictionary = {}
 var furniture: Dictionary = {}      # kind -> số bộ đã mua nhưng chưa đặt
 var placed: Array = []              # bàn ghế đã đặt: {kind, floor, zone, x, z, rot}
 var floors_unlocked: Dictionary = {}
-var grill_level := 1                # cấp lò than vỉa hè
-var warmer_level := 1               # cấp lò giữ nhiệt trong quầy
-var grill_progress := 0.0           # mẻ đang nướng, 0..1
+## LÒ THAN TÁCH RIÊNG TỪNG KHU. Khu nào cũng có xe lò than của mình ngoài vỉa
+## hè, ăn than + sườn sống của kho khu đó, nướng xong thì anh đứng lò của khu đó
+## bưng vào lò giữ nhiệt của chính khu đó. Nâng cấp cũng riêng: nâng lò khu máy
+## lạnh không làm lò khu trệt ra thêm miếng nào.
+##   grill_levels[floor_id]   = cấp lò than của khu đó
+##   warmer_levels[floor_id]  = cấp lò giữ nhiệt của khu đó
+##   grill_progress[floor_id] = mẻ đang nướng của khu đó, 0..1
+var grill_levels: Dictionary = {}
+var warmer_levels: Dictionary = {}
+var grill_progress: Dictionary = {}
 
 ## Chỗ lẻ của công thức chưa đủ để rút khỏi kho. Công thức ghi được số lẻ (0.5 kg
 ## gạo một dĩa chẳng hạn) nhưng KHO thì luôn là số nguyên, nên phần lẻ nằm chờ ở
@@ -378,7 +388,7 @@ func _load_balance() -> void:
 	_merge_rows(d.get("staff", {}), STAFF,
 		{"cost": TYPE_FLOAT, "salary": TYPE_FLOAT, "max": TYPE_INT, "free": TYPE_INT})
 	_merge_rows(d.get("decor", {}), DECOR,
-		{"cost": TYPE_FLOAT, "amb": TYPE_INT, "seats": TYPE_INT})
+		{"cost": TYPE_FLOAT, "amb": TYPE_INT, "seats": TYPE_INT, "max": TYPE_INT})
 	_merge_rows(d.get("furniture", {}), FURNITURE,
 		{"cost": TYPE_FLOAT, "seats": TYPE_INT, "amb": TYPE_INT})
 
@@ -565,9 +575,13 @@ func _reset_defaults() -> void:
 	floors_unlocked.clear()
 	for f in FLOORS:
 		floors_unlocked[f["id"]] = f["cost"] == 0
-	grill_level = 1
-	warmer_level = 1
-	grill_progress = 0.0
+	grill_levels.clear()
+	warmer_levels.clear()
+	grill_progress.clear()
+	for gf in FLOORS:
+		grill_levels[str(gf["id"])] = 1
+		warmer_levels[str(gf["id"])] = 1
+		grill_progress[str(gf["id"])] = 0.0
 	ing_debt.clear()
 	_restock_timer = 0.0
 	# Kho đã dựng xong ở trên nên giờ mới biết trần từng món của từng khu: khu
@@ -735,80 +749,96 @@ func station_batch(id: String) -> int:
 	return int(station_def(id)["batch"]) + int(floor(float(lv - 1) / float(maxi(LEVEL_BATCH_EVERY, 1))))
 
 
-## Một mẻ nướng được bao nhiêu miếng sườn.
-func grill_batch() -> int:
-	return GRILL_BATCH_BASE + (grill_level - 1) * GRILL_BATCH_STEP
+## Cấp lò than của khu `fid`. Khu đã mở mà chưa ghi cấp thì coi như cấp 1 — y
+## như station_level() làm với quầy: mở khu là có ngay cái lò cấp 1 ngoài hiên.
+func grill_level(fid: String) -> int:
+	return maxi(1, int(grill_levels.get(fid, 1)))
 
 
-func grill_upgrade_cost() -> float:
-	if grill_at_max():
+## Cấp lò giữ nhiệt của khu `fid`.
+func warmer_level(fid: String) -> int:
+	return maxi(1, int(warmer_levels.get(fid, 1)))
+
+
+## Mẻ sườn đang nướng dở ở lò khu `fid`, 0..1.
+func grill_prog(fid: String) -> float:
+	return clampf(float(grill_progress.get(fid, 0.0)), 0.0, 1.0)
+
+
+## Một mẻ của lò khu `fid` nướng được bao nhiêu miếng sườn.
+func grill_batch(fid: String) -> int:
+	return GRILL_BATCH_BASE + (grill_level(fid) - 1) * GRILL_BATCH_STEP
+
+
+func grill_upgrade_cost(fid: String) -> float:
+	if grill_at_max(fid):
 		return 0.0
-	var listed := _cost_at(GRILL_UP_COSTS, grill_level)
+	var listed := _cost_at(GRILL_UP_COSTS, grill_level(fid))
 	if listed >= 0.0:
 		return listed
-	return GRILL_UP_COST * pow(GRILL_UP_MULT, float(grill_level - 1))
+	return GRILL_UP_COST * pow(GRILL_UP_MULT, float(grill_level(fid) - 1))
 
 
-func grill_at_max() -> bool:
-	return grill_level >= MAX_LEVEL
+func grill_at_max(fid: String) -> bool:
+	return grill_level(fid) >= MAX_LEVEL
 
 
 ## Còn than là lò còn đỏ lửa, dù chưa có miếng sườn nào trên vỉ. Hết sườn chỉ là
 ## không có gì để nướng, không phải lò tắt.
-func grill_lit() -> bool:
-	return stock_at(grill_floor(), "coal") >= GRILL_COAL
+func grill_lit(fid: String) -> bool:
+	return stock_at(fid, "coal") >= GRILL_COAL
 
 
-## Lò than vỉa hè chỉ có một cái, nằm ngoài hiên khu trệt — than với sườn sống
-## của nó lấy ở kho khu đó.
-func grill_floor() -> String:
-	return str(FLOORS[0]["id"])
+## Khu nào mở là khu đó có lò than vỉa hè của mình.
+func has_grill(fid: String) -> bool:
+	return is_floor_unlocked(fid)
 
 
-## Lò có đang nướng mẻ nào không: phải còn sườn sống cho cả mẻ và còn than.
-func grill_running() -> bool:
-	# lò giữ nhiệt còn chỗ mới nướng tiếp: nướng ra mà không chỗ để thì phí công
-	return stock_at(grill_floor(), "pork") >= float(grill_batch()) \
-		and stock_at(grill_floor(), "coal") >= GRILL_COAL \
-		and not warmers_full()
+## Danh sách mấy khu đang có lò than (tức mọi khu đã mở).
+func grill_floors() -> Array:
+	var out: Array = []
+	for f in FLOORS:
+		var fid := str(f["id"])
+		if is_floor_unlocked(fid):
+			out.append(fid)
+	return out
 
 
-## Lò giữ nhiệt trong quầy trữ sẵn được bao nhiêu miếng sườn.
-func warmer_capacity() -> int:
-	return WARMER_BASE + (warmer_level - 1) * WARMER_STEP
+## Lò khu `fid` có đang nướng mẻ nào không: phải còn sườn sống đủ cả mẻ, còn
+## than, và lò giữ nhiệt của CHÍNH KHU ĐÓ còn chỗ xếp — nướng ra mà không có
+## chỗ để thì phí công.
+func grill_running(fid: String) -> bool:
+	return stock_at(fid, "pork") >= float(grill_batch(fid)) \
+		and stock_at(fid, "coal") >= GRILL_COAL \
+		and not warmer_full(fid)
 
 
-func warmer_upgrade_cost() -> float:
-	if warmer_at_max():
+## Lò giữ nhiệt của khu `fid` trữ sẵn được bao nhiêu miếng sườn.
+func warmer_capacity(fid: String) -> int:
+	return WARMER_BASE + (warmer_level(fid) - 1) * WARMER_STEP
+
+
+func warmer_upgrade_cost(fid: String) -> float:
+	if warmer_at_max(fid):
 		return 0.0
-	var listed := _cost_at(WARMER_UP_COSTS, warmer_level)
+	var listed := _cost_at(WARMER_UP_COSTS, warmer_level(fid))
 	if listed >= 0.0:
 		return listed
-	return WARMER_UP_COST * pow(WARMER_UP_MULT, float(warmer_level - 1))
+	return WARMER_UP_COST * pow(WARMER_UP_MULT, float(warmer_level(fid) - 1))
 
 
-func warmer_at_max() -> bool:
-	return warmer_level >= MAX_LEVEL
+func warmer_at_max(fid: String) -> bool:
+	return warmer_level(fid) >= MAX_LEVEL
 
 
-## Lò giữ nhiệt của MỘT khu đang đầy tới đâu, 0..1 — dùng cho thanh mức và cho
-## số miếng bày trong khay của khu đó. Khu nào cũng có khay riêng, nhưng cấp lò
-## thì nâng chung cho cả quán.
+## Lò giữ nhiệt của một khu đang đầy tới đâu, 0..1 — dùng cho thanh mức và cho
+## số miếng bày trong khay của khu đó.
 func warmer_fill(fid: String) -> float:
-	return clampf(stock_at(fid, "grilled") / float(warmer_capacity()), 0.0, 1.0)
+	return clampf(stock_at(fid, "grilled") / float(warmer_capacity(fid)), 0.0, 1.0)
 
 
 func warmer_full(fid: String) -> bool:
-	return stock_at(fid, "grilled") >= float(warmer_capacity())
-
-
-## Mọi khu đang mở đều hết chỗ chứa sườn — lúc đó lò than mới nghỉ tay.
-func warmers_full() -> bool:
-	for f in FLOORS:
-		var fid := str(f["id"])
-		if is_floor_unlocked(fid) and not warmer_full(fid):
-			return false
-	return true
+	return stock_at(fid, "grilled") >= float(warmer_capacity(fid))
 
 
 ## ---------------- Hai cái kho của quán ----------------
@@ -982,7 +1012,7 @@ func add_stock(fid: String, id: String, n: float) -> void:
 ## bán thành phẩm khác do kho quầy lo (xem station_keep), còn lại chất thoải mái.
 func stock_cap(id: String, fid: String) -> float:
 	if id == "grilled":
-		return float(warmer_capacity())
+		return float(warmer_capacity(fid))
 	return float(item_capacity(id, fid)) if is_stored(id) else INF
 
 
@@ -1008,29 +1038,33 @@ func upgrade_fridge(fid: String) -> bool:
 	return upgrade_store("fridge", fid)
 
 
-func upgrade_warmer() -> bool:
-	if warmer_at_max():
+## Nới lò giữ nhiệt của RIÊNG khu `fid` — khu khác vẫn khay cũ.
+func upgrade_warmer(fid: String) -> bool:
+	if not is_floor_unlocked(fid) or warmer_at_max(fid):
 		return false
-	var cost := warmer_upgrade_cost()
+	var cost := warmer_upgrade_cost(fid)
 	if not _spend(cost):
 		return false
-	warmer_level += 1
+	warmer_levels[fid] = warmer_level(fid) + 1
 	_bump("upgrades")
 	state_changed.emit()
-	_log("Nâng lò giữ nhiệt lên cấp %d — chứa được %d miếng" % [warmer_level, warmer_capacity()])
+	_log("Nâng lò giữ nhiệt %s lên cấp %d — chứa được %d miếng"
+		% [str(floor_data(fid)["name"]).to_lower(), warmer_level(fid), warmer_capacity(fid)])
 	return true
 
 
-func upgrade_grill() -> bool:
-	if grill_at_max():
+## Nâng lò than vỉa hè của RIÊNG khu `fid`.
+func upgrade_grill(fid: String) -> bool:
+	if not is_floor_unlocked(fid) or grill_at_max(fid):
 		return false
-	var cost := grill_upgrade_cost()
+	var cost := grill_upgrade_cost(fid)
 	if not _spend(cost):
 		return false
-	grill_level += 1
+	grill_levels[fid] = grill_level(fid) + 1
 	_bump("upgrades")
 	state_changed.emit()
-	_log("Nâng lò than lên cấp %d — mỗi mẻ %d miếng" % [grill_level, grill_batch()])
+	_log("Nâng lò than %s lên cấp %d — mỗi mẻ %d miếng"
+		% [str(floor_data(fid)["name"]).to_lower(), grill_level(fid), grill_batch(fid)])
 	return true
 
 
@@ -1053,7 +1087,7 @@ func station_cost_per_portion(id: String) -> float:
 ## mấy quầy còn lại thì nới thêm một nấc mỗi cấp.
 func station_keep(id: String) -> int:
 	if str(station_def(id).get("out", "")).is_empty():
-		return warmer_capacity()
+		return warmer_capacity(station_floor(id))
 	var lv := maxi(station_level(id), 1)
 	return int(station_def(id).get("keep", 40)) 		+ (lv - 1) * int(station_def(id).get("keep_step", 0))
 
@@ -1258,6 +1292,19 @@ func decor_count(fid: String, id: String) -> int:
 	if typeof(row) != TYPE_DICTIONARY:
 		return 0
 	return int(row.get(id, 0))
+
+
+## Một khu bày được nhiều nhất mấy món loại `id`.
+func decor_max(id: String) -> int:
+	var d = DECOR.get(id, {})
+	if typeof(d) != TYPE_DICTIONARY:
+		return 0
+	return maxi(0, int((d as Dictionary).get("max", 1)))
+
+
+## Khu `fid` còn bày thêm được mấy món loại `id` nữa.
+func decor_left(fid: String, id: String) -> int:
+	return maxi(0, decor_max(id) - decor_count(fid, id))
 
 
 ## Cả quán cộng lại có mấy món loại `id` (dùng cho mấy con số chung).
@@ -1662,42 +1709,30 @@ func _end_day() -> void:
 	save_game()
 
 
-## Lò than vỉa hè chạy độc lập với các quầy: đủ sườn sống và còn than thì đỏ lửa,
-## hết một mẻ thì cả mẻ thành "sườn nướng sẵn" cho quầy trong quán dùng.
+## Lò than vỉa hè chạy độc lập với các quầy, và KHU NÀO LÒ NẤY: mỗi khu đã mở có
+## một cái lò riêng, ăn than + sườn sống của kho khu đó, hết một mẻ thì cả mẻ
+## thành "sườn nướng sẵn" xếp vào lò giữ nhiệt của chính khu đó.
 func _tick_grill(d: float) -> bool:
-	if not grill_running():
-		return false
-	grill_progress += d / GRILL_CYCLE
-	if grill_progress < 1.0:
-		return false
-	grill_progress = 0.0
-	var gf := grill_floor()
-	var batch := grill_batch()
-	add_stock(gf, "pork", -float(batch))
-	add_stock(gf, "coal", -GRILL_COAL)
-	# Lò than chỉ có một cái ngoài vỉa hè mà khu nào cũng cần sườn, nên nướng
-	# xong thì chia vòng tròn vào lò giữ nhiệt của mấy khu đang mở: mỗi lượt một
-	# miếng cho khu còn chỗ. Hết chỗ cả quán thì phần dư đành bỏ lại trên vỉ.
-	var takers: Array = []
-	for f in FLOORS:
-		if is_floor_unlocked(str(f["id"])):
-			takers.append(str(f["id"]))
-	var kept := 0
-	while kept < batch:
-		var moved := false
-		for t in takers:
-			if kept >= batch:
-				break
-			if warmer_full(str(t)):
-				continue
-			add_stock(str(t), "grilled", 1.0)
-			kept += 1
-			moved = true
-		if not moved:
-			break
-	grill_batch_ready.emit(kept)
-	_log("Nướng xong %d miếng sườn, chia vào lò giữ nhiệt các khu" % kept)
-	return true
+	var any := false
+	for gf in grill_floors():
+		var fid := str(gf)
+		if not grill_running(fid):
+			continue
+		grill_progress[fid] = grill_prog(fid) + d / GRILL_CYCLE
+		if grill_prog(fid) < 1.0:
+			continue
+		grill_progress[fid] = 0.0
+		var batch := grill_batch(fid)
+		add_stock(fid, "pork", -float(batch))
+		add_stock(fid, "coal", -GRILL_COAL)
+		# khay của khu đó có thể chỉ còn vài chỗ, phần dư đành bỏ lại trên vỉ
+		var kept := int(minf(float(batch), stock_room("grilled", fid)))
+		if kept > 0:
+			add_stock(fid, "grilled", float(kept))
+		grill_batch_ready.emit(fid, kept)
+		_log("Nướng xong %d miếng sườn cho %s" % [kept, str(floor_data(fid)["name"]).to_lower()])
+		any = true
+	return any
 
 
 # ---------------- Nhiệm vụ ----------------
@@ -1790,24 +1825,24 @@ func boost_station(id: String) -> bool:
 	return true
 
 
-## Tiền thúc cho xong mẻ sườn ngoài lò than, tính y hệt quầy trong quán.
-func grill_boost_cost() -> int:
-	var left := clampf(1.0 - grill_progress, 0.0, 1.0)
-	return int(round(GRILL_BOOST_COST * pow(BOOST_COST_MULT, float(grill_level - 1)) * left))
+## Tiền thúc cho xong mẻ sườn ở lò khu `fid`, tính y hệt quầy trong quán.
+func grill_boost_cost(fid: String) -> int:
+	var left := clampf(1.0 - grill_prog(fid), 0.0, 1.0)
+	return int(round(GRILL_BOOST_COST * pow(BOOST_COST_MULT, float(grill_level(fid) - 1)) * left))
 
 
-func can_boost_grill() -> bool:
+func can_boost_grill(fid: String) -> bool:
 	# `grill_running` đã hỏi đủ ba chuyện: còn than, còn sườn sống, lò giữ nhiệt
 	# còn chỗ. Thiếu thứ nào thì có thúc cũng chẳng ra miếng nào.
-	return grill_running() and can_afford(float(grill_boost_cost()))
+	return grill_running(fid) and can_afford(float(grill_boost_cost(fid)))
 
 
-func boost_grill() -> bool:
-	if not can_boost_grill():
+func boost_grill(fid: String) -> bool:
+	if not can_boost_grill(fid):
 		return false
-	if not _spend(float(grill_boost_cost())):
+	if not _spend(float(grill_boost_cost(fid))):
 		return false
-	grill_progress = 0.999
+	grill_progress[fid] = 0.999
 	_bump("boosts")
 	return true
 
@@ -1822,10 +1857,10 @@ func station_supplies(id: String) -> Array:
 	for ing in recipe:
 		if INGREDIENTS.has(ing) and bool(INGREDIENTS[ing].get("shop", true)):
 			out.append(str(ing))
-	# Quầy "Lò nướng thịt" đại diện cho cả dây sườn nướng, mà than với sườn sống
-	# thì đốt ngoài lò than vỉa hè — nên chỉ quản lý ở đúng khu có lò mới đi chợ
-	# mua hai món đó, quản lý khu trên chỉ trông cái khay giữ nhiệt.
-	if station_base(id) == "grill" and station_floor(id) == grill_floor():
+	# Quầy "Lò nướng thịt" đại diện cho cả dây sườn nướng của khu đó, mà khu nào
+	# cũng có lò than riêng ngoài hiên — nên quản lý khu nào cũng phải lo than và
+	# sườn sống cho lò của khu mình.
+	if station_base(id) == "grill" and has_grill(station_floor(id)):
 		out.append("pork")
 		out.append("coal")
 	return out
@@ -2086,6 +2121,9 @@ func buy_decor(id: String, fid: String = "") -> bool:
 		fid = str(FLOORS[0]["id"])
 	if not is_floor_unlocked(fid):
 		return false
+	# khu này bày đủ món loại đó rồi thì thôi, đừng lấy tiền của người ta
+	if decor_left(fid, id) <= 0:
+		return false
 	if not _spend(float(DECOR[id]["cost"])):
 		return false
 	if typeof(decor.get(fid, null)) != TYPE_DICTIONARY:
@@ -2280,7 +2318,8 @@ func save_game() -> void:
 		"pending_portions": pending_portions, "managers": managers,
 		"staff": staff, "decor": decor, "floors": floors_unlocked,
 		"stores": stores, "store_levels": store_levels,
-		"grill_level": grill_level, "warmer_level": warmer_level,
+		"grill_levels": grill_levels, "warmer_levels": warmer_levels,
+		"grill_progress": grill_progress,
 		"furniture": furniture, "placed": placed,
 		"ing_debt": ing_debt,
 		"auto_open": auto_open, "stats": stats, "claimed": claimed,
@@ -2392,7 +2431,8 @@ func load_game() -> bool:
 				src = d_decor[fid]
 			var row: Dictionary = {}
 			for id in DECOR:
-				row[id] = int(src.get(id, 0))
+				# save đời cũ có thể ghi nhiều hơn trần bây giờ, cắt bớt cho khớp
+				row[id] = clampi(int(src.get(id, 0)), 0, decor_max(str(id)))
 			decor[fid] = row
 	# Save đời cũ chỉ có tủ lạnh, ghi phẳng ở "fridges"/"fridge_levels"; đọc lại
 	# thì coi như đó là kho "fridge", còn kho đồ khô thì khu nào cũng chưa có kệ.
@@ -2438,14 +2478,38 @@ func load_game() -> bool:
 			placed.append({"kind": kind, "floor": int(raw.get("floor", 0)),
 				"zone": str(raw.get("zone", "in")), "x": float(raw.get("x", 0.0)),
 				"z": float(raw.get("z", 0.0)), "rot": int(raw.get("rot", 0))})
-	grill_level = maxi(1, int(data.get("grill_level", 1)))
-	warmer_level = maxi(1, int(data.get("warmer_level", 1)))
+	# Cấp lò than và lò giữ nhiệt giờ ghi theo khu. Save đời cũ chỉ có một con số
+	# chung (hồi cả quán dùng chung một cái lò vỉa hè) thì dồn về khu trệt, mấy
+	# khu trên bắt đầu lại từ cấp 1 — y như cách kho hàng đã làm.
+	grill_levels.clear()
+	warmer_levels.clear()
+	grill_progress.clear()
+	var d_gl = data.get("grill_levels", null)
+	var d_wl = data.get("warmer_levels", null)
+	var d_gp = data.get("grill_progress", null)
+	var old_gl := maxi(1, int(data.get("grill_level", 1)))
+	var old_wl := maxi(1, int(data.get("warmer_level", 1)))
+	for gf in FLOORS:
+		var gfid := str(gf["id"])
+		var first := gfid == str(FLOORS[0]["id"])
+		if typeof(d_gl) == TYPE_DICTIONARY:
+			grill_levels[gfid] = maxi(1, int((d_gl as Dictionary).get(gfid, 1)))
+		else:
+			grill_levels[gfid] = old_gl if first else 1
+		if typeof(d_wl) == TYPE_DICTIONARY:
+			warmer_levels[gfid] = maxi(1, int((d_wl as Dictionary).get(gfid, 1)))
+		else:
+			warmer_levels[gfid] = old_wl if first else 1
+		var gp := 0.0
+		if typeof(d_gp) == TYPE_DICTIONARY:
+			gp = clampf(float((d_gp as Dictionary).get(gfid, 0.0)), 0.0, 1.0)
+		grill_progress[gfid] = gp
 	# Ván cũ lưu trước khi lò giữ nhiệt có sức chứa thì sườn nướng có thể đang
 	# nhiều hơn cả cái lò: gạt phần dư đi một lần cho khớp luật mới.
-	if not data.has("warmer_level"):
+	if not data.has("warmer_level") and typeof(d_wl) != TYPE_DICTIONARY:
 		for wf in FLOORS:
 			var wfid := str(wf["id"])
-			add_stock(wfid, "grilled", minf(0.0, float(warmer_capacity()) - stock_at(wfid, "grilled")))
+			add_stock(wfid, "grilled", minf(0.0, float(warmer_capacity(wfid)) - stock_at(wfid, "grilled")))
 	var d_floors = data.get("floors", {})
 	if typeof(d_floors) == TYPE_DICTIONARY:
 		for fl in FLOORS:
@@ -2489,7 +2553,7 @@ func load_game() -> bool:
 			if is_stored(str(cid)):
 				cap = float(item_capacity(str(cid), cfid))
 			elif str(cid) == "grilled":
-				cap = float(warmer_capacity())
+				cap = float(warmer_capacity(cfid))
 			if stock_at(cfid, str(cid)) > cap:
 				add_stock(cfid, str(cid), cap - stock_at(cfid, str(cid)))
 	last_seen = float(data.get("last_seen", Time.get_unix_time_from_system()))

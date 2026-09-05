@@ -532,6 +532,7 @@ func _build_decor() -> void:
     for id in GameManager.DECOR:
         var d: Dictionary = GameManager.DECOR[id]
         var have := GameManager.decor_count(shop_floor, id)
+        var maxn := GameManager.decor_max(str(id))
         var cost := float(d["cost"])
 
         var card := UIKit.card(11)
@@ -547,23 +548,31 @@ func _build_decor() -> void:
         nr.add_theme_constant_override("separation", 6)
         info.add_child(nr)
         nr.add_child(UIKit.label(str(d["name"]), 15, UIKit.ACCENT_900))
-        if have > 0:
-            nr.add_child(UIKit.tag("khu này %d" % have, UIKit.OK, Color(0.31, 0.54, 0.36, 0.14)))
+        # luôn ghi rõ khu này đang có mấy trên tối đa mấy, khỏi mua lố
+        nr.add_child(UIKit.tag("khu này %d/%d" % [have, maxn],
+            UIKit.OK if have > 0 else UIKit.ACCENT_900,
+            Color(0.31, 0.54, 0.36, 0.14) if have > 0 else Color(0.31, 0.36, 0.54, 0.12)))
         var everywhere := GameManager.decor_total(id)
         if everywhere > have:
             nr.add_child(UIKit.tag("cả quán %d" % everywhere, UIKit.ACCENT_900, Color(0.31, 0.36, 0.54, 0.12)))
         info.add_child(UIKit.muted(str(d["desc"]), 11))
 
-        var buy := UIKit.button_secondary(UIKit.money_short(cost) + " ₫", 13)
-        buy.custom_minimum_size = Vector2(156, 75)
-        buy.set_meta("cost", cost)
-        buy.pressed.connect(func():
-            if GameManager.buy_decor(id, shop_floor):
-                _toast("Đã đặt " + str(d["name"]).to_lower() + " vào "
-                    + str(GameManager.floor_data(shop_floor)["name"]).to_lower())
-            else:
-                _toast("Không đủ tiền"))
-        h.add_child(buy)
+        if have >= maxn:
+            var full := UIKit.button_ghost("ĐỦ RỒI", 12)
+            full.disabled = true
+            full.custom_minimum_size = Vector2(156, 75)
+            h.add_child(full)
+        else:
+            var buy := UIKit.button_secondary(UIKit.money_short(cost) + " ₫", 13)
+            buy.custom_minimum_size = Vector2(156, 75)
+            buy.set_meta("cost", cost)
+            buy.pressed.connect(func():
+                if GameManager.buy_decor(id, shop_floor):
+                    _toast("Đã đặt " + str(d["name"]).to_lower() + " vào "
+                        + str(GameManager.floor_data(shop_floor)["name"]).to_lower())
+                else:
+                    _toast("Không đủ tiền"))
+            h.add_child(buy)
         list_box.add_child(card)
 
     list_box.add_child(UIKit.spacer(6))
